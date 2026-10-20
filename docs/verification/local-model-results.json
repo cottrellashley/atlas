@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "verifiedAtUTC": "2026-10-20T22:47:51.499386+00:00",
+  "platform": "Linux x86_64",
+  "harnesses": {
+    "pi": "1.3.0",
+    "opencode": "2.1.0"
+  },
+  "inference": "Actual local CPU model inference, not deterministic fixture responses",
+  "externalCredentialsUsed": false,
+  "manifest": {
+    "directory": "/tmp/atlas-real-model-6a8j7slp",
+    "llama": {
+      "version": "b11761",
+      "commit": "119f68d7d441d66bdf8ebd117ca0deee2119fbcc",
+      "filename": "llama.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11761/llama-b11761-bin-ubuntu-x64.tar.gz",
+      "bytes": 22236133,
+      "sha256": "42a03b2f80cc970d7042f06fe5ea74b410625497226adbd93cdb0268518222cc"
+    },
+    "model": {
+      "id": "Qwen/Qwen3-0.6B-GGUF",
+      "revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "filename": "Qwen3-0.6B-Q8_0.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf",
+      "bytes": 639446688,
+      "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+    }
+  },
+  "server": {
+    "pid": 963328,
+    "port": 37567,
+    "args": [
+      "/tmp/atlas-real-model-6a8j7slp/runtime/llama-b11761/llama-server",
+      "--model",
+      "/tmp/atlas-real-model-6a8j7slp/Qwen3-0.6B-Q8_0.gguf",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "37567",
+      "--alias",
+      "qwen3-0.6b",
+      "--ctx-size",
+      "16384",
+      "--parallel",
+      "1",
+      "--threads",
+      "8",
+      "--n-predict",
+      "512",
+      "--reasoning",
+      "off",
+      "--chat-template-kwargs",
+      "{\"enable_thinking\":false}",
+      "--jinja",
+      "--temp",
+      "0",
+      "--seed",
+      "42"
+    ]
+  },
+  "results": {
+    "pi": {
+      "managedId": "8937a028a88123a1c227e64c1f3fbc45",
+      "model": "atlaslocal/qwen3-0.6b",
+      "first": "NEBULA7319",
+      "resumed": "NEBULA7319",
+      "resume": {
+        "version": 1,
+        "data": {
+          "sessionId": "8937a028a88123a1c227e64c1f3fbc45",
+          "sessionFile": "/tmp/atlas-real-model-6a8j7slp/pi-native/sessions/2026-10-20T22-44-35-755Z_8937a028a88123a1c227e64c1f3fbc45.jsonl"
+        }
+      },
+      "state": "idle",
+      "tool": {
+        "state": "idle",
+        "text": "Read file proof.txt.",
+        "toolEvents": 0,
+        "approvals": [],
+        "passed": false
+      },
+      "freshTool": {
+        "managedId": "fbf6c675b440e2ad65ac11afdca994e7",
+        "state": "idle",
+        "text": "The contents of the file proof.txt are:\n\nRIVER2961",
+        "toolEvents": 2,
+        "passed": true
+      }
+    },
+    "opencode": {
+      "managedId": "b94648e5e84933130a2f731b5147b8fd",
+      "model": "atlaslocal/qwen3-0.6b",
+      "first": "NEBULA7319",
+      "resumed": "NEBULA7319",
+      "resume": {
+        "version": 1,
+        "data": {
+          "sessionId": "ses_ea482e608ffeGeU4kL1i3WPzOX",
+          "cwd": "/tmp/atlas-real-model-6a8j7slp/opencode-project",
+          "apiMajor": 2
+        }
+      },
+      "state": "idle",
+      "tool": {
+        "state": "idle",
+        "text": "The exact contents of the file proof.txt are:  \n1: RIVER2961",
+        "toolEvents": 3,
+        "approvals": [
+          "per_15b7e0955001DcXo0zHT7RnWcb"
+        ],
+        "passed": true
+      }
+    }
+  },
+  "cleanup": {
+    "completedAtUTC": "2026-10-20T22:48:18.780317+00:00",
+    "atlasDaemonStopped": true,
+    "llamaServerTerminated": true,
+    "ownedProcessesRemaining": 0,
+    "temporaryDirectoryRemoved": true
+  },
+  "downloadChecksumsVerified": true
+}

@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "completedAt": "2026-10-20T16:49:52.762621124-06:00",
+  "platform": "Linux 7.2.5-3-omarchy x86_64 (not WSL)",
+  "go": "1.27.3",
+  "harnessVersions": {
+    "claude": "2.1.302",
+    "opencode": "2.1.0",
+    "pi": "1.3.0"
+  },
+  "command": "ATLAS_PI_E2E=1 ATLAS_OPENCODE_REAL=1 ATLAS_OPENCODE_CLI=1 ATLAS_TEST_CLAUDE=1 ATLAS_CLAUDE_E2E=1 go test -race -json ./... -count=1 -timeout=10m",
+  "testCounts": {
+    "pass": 59,
+    "skip": 5
+  },
+  "raceReports": 0,
+  "packages": [
+    {
+      "package": "github.com/cottrellashley/atlas/internal/store",
+      "status": "pass",
+      "seconds": 1.013
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/cli",
+      "status": "pass",
+      "seconds": 1.017
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "status": "pass",
+      "seconds": 1.029
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/process",
+      "status": "pass",
+      "seconds": 1.032
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "status": "pass",
+      "seconds": 1.049
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "status": "pass",
+      "seconds": 9.657
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "status": "pass",
+      "seconds": 10.08
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "status": "pass",
+      "seconds": 14.812
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/tests",
+      "status": "pass",
+      "seconds": 16.08
+    }
+  ],
+  "passedTests": [
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestStrictOptionsAndOpaqueHandles"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestStreamPreservesIdentityAndDoesNotDuplicateText"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestResultFailureIsFailureDespiteExitStatus"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestResultOnlyOutputIsVisible"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestQuestionAnswersPreserveNativeInput"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestDiscoverNativeSessionsAndFilterWorkspace"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestSSEFramingAndTextDeduplication"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRunFailureDoesNotBecomeSuccessOnAcknowledgment"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestModelAndHandleValidation"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/cli",
+      "test": "TestInterspersedFlags"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/store",
+      "test": "TestRecoverTruncatedTail"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/store",
+      "test": "TestRefuseCorruptCompleteRecord"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/store",
+      "test": "TestIDTraversalRejected"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestFailedSendPersistenceDoesNotLeavePhantomRun"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestBuiltinsAndIdempotence/opencode"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestDurableTerminalReplayClearsPermissions"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/cli",
+      "test": "TestForegroundCancelDuringStatusRequestStopsTurn"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestFailedEventAppendDoesNotAdvanceCursor"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestBuiltinsAndIdempotence/pi"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/cli",
+      "test": "TestInitAndRoleSelection"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/cli",
+      "test": "TestPromptStdin"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestBuiltinsAndIdempotence/claude"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestBuiltinsAndIdempotence"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestConflictDoesNotMutate"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestPersistenceOrderingAndResume"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestAdditiveNativeConfig"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestSymlinkAndTraversalRejected"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestMCPTranslations"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestPlanDetectsConcurrentChanges"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestJSONCNotShadowed"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestExternalManifestDoesNotInheritBuiltinDefaults"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestNullNativeOverlayReturnsError"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestPreservesPrivateConfigAndExecutableSkill"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/project",
+      "test": "TestMCPEnvironmentReferencesAndOptionalFields"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/process",
+      "test": "TestNativeChildDiesWithOwner"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/process",
+      "test": "TestConfiguredPathResolvesExecutable"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/process",
+      "test": "TestParentHarnessMarkersAreStripped"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestConcurrentSendAndStopSettlement"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestPermissionRemainsUntilNativeAcknowledgment"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/daemon",
+      "test": "TestImportIdempotenceAndCrashRecovery"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFullCLIBackgroundResumeDiscoveryImport"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFullCLIPermissionsAndStop"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestRealClaudeLifecycle"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRealOpenCodeLocalModelLifecycle/NativeConfiguration"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFullCLITemplateMCP"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestDiscoveryPrecedenceAndNativeHandle"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestRunRejectsUnsupportedFlagsBeforeStarting"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureToolResumeAndCatalog"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureCancellation"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureExtensionPermission"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureRetryWaitsForSettlement"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureProviderFailureReturnsErrorAndHandle"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiFixtureHandledCommand"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/claude",
+      "test": "TestRealClaudePermissionAndCancellation"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRealOpenCodeLocalModelLifecycle/FullCLI"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRealOpenCodeLocalModelLifecycle"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestCancelledBeforeStart"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRealOpenCodeDescendantRequests"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/tests",
+      "test": "TestClaudeCLI"
+    }
+  ],
+  "skippedTests": [
+    {
+      "package": "github.com/cottrellashley/atlas/internal/process",
+      "test": "TestParentDeathHelper"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestPiMCPFixtureProcess"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/pi",
+      "test": "TestInstalledPiLiveModelResume"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/internal/adapters/opencode",
+      "test": "TestRealOpenCodeExternal"
+    },
+    {
+      "package": "github.com/cottrellashley/atlas/tests",
+      "test": "TestClaudeCLIMCPServer"
+    }
+  ],
+  "skipExplanation": "Three subprocess-only helper entrypoints skip as top-level tests but are exercised by their parent tests; two hosted external-inference gates skip without credentials. Separate actual local model evidence is in local-model-results.json."
+}

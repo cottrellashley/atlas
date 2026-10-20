@@ -1,0 +1,4 @@
+/bin/
+/.atlas/
+/test-results/
+*.test

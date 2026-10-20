@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "company-researcher",
+  "version": "1.0.0",
+  "instructions": "common/AGENTS.md",
+  "skills": ["skills/research"],
+  "mcp": "mcp/servers.json",
+  "requires": ["skills"],
+  "agents": {"researcher": {}, "reviewer": {}}
+}
