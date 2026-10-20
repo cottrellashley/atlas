@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/pi-tools",
+  "version": "1.0.0",
+  "kind": "pi-package",
+  "description": "A small native Pi extension for verifying Atlas distribution",
+  "harnesses": ["pi"],
+  "native": {"path": "package"}
+}

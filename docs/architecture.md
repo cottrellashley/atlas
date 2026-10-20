@@ -53,3 +53,29 @@ Native harness transcripts remain the source for model conversation continuation
 6. Register the factory and add native template rendering only if that harness requires it.
 
 No generic ACP implementation, plugin loader, graphical UI, cross-harness conversation conversion, or universal live model switch is claimed. The requested three harnesses share a tested CLI workflow, while their native capabilities remain explicit. Additional providers can implement the same contract without duplicating the daemon or template installer.
+
+## Package distribution and native installation
+
+Distribution is independent of inference/session `harness.Driver` adapters:
+
+- `internal/catalog`: Go GitHub SDK client, authenticated catalogs, immutable
+  release identities, bounded digest-verified artifact downloads.
+- `internal/artifact`: strict package manifests, declared resource snapshots,
+  safe archives, content-addressed cache and disposable extraction views.
+- `internal/resolve`: per-harness bundles, exact graph locks, aliases, cold sync,
+  cycle/version conflict checks and locked dependency validation.
+- `internal/assets`: native resource layouts, MCP/config projection, native
+  plugin payloads and read-only installed-version preflight.
+- `internal/install`: complete desired contributions, ownership of files/JSON
+  pointers/array entries, comments-preserving JSONC edits, shared owners,
+  optimistic transactions, durable journal, rollback/recovery and drift checks.
+
+Project declarations and locks are shareable; installation receipts and journal
+backups are private. Receipts retain installed version/source/digest provenance,
+so changing a lock alone does not cause `status` to report it installed.
+`init --package` combines template files and package contributions in one
+transaction before any project mutation. No provider cache/database is edited.
+
+Native runtime loading remains native: `atlas tui` uses the existing `exec`
+terminal handoff, and direct provider commands read the same installed files.
+See [package distribution](packages.md) and [native payloads](native-packages.md).

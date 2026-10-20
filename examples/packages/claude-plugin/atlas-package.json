@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/claude-tools",
+  "version": "1.0.0",
+  "kind": "claude-plugin",
+  "description": "A small native Claude plugin for verifying Atlas distribution",
+  "harnesses": ["claude"],
+  "native": {"path": "plugin"}
+}

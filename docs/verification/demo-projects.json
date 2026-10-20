@@ -1,0 +1,29 @@
+{
+  "claude": {
+    "directory": "/home/cottrellashley/atlas-demo/claude",
+    "packages": [
+      "@demo/evidence@1.0.0",
+      "@demo/claude-tools@1.0.0",
+      "@demo/researcher@1.0.0"
+    ],
+    "status": "verified"
+  },
+  "pi": {
+    "directory": "/home/cottrellashley/atlas-demo/pi",
+    "packages": [
+      "@demo/evidence@1.0.0",
+      "@demo/pi-tools@1.0.0",
+      "@demo/researcher@1.0.0"
+    ],
+    "status": "verified"
+  },
+  "opencode": {
+    "directory": "/home/cottrellashley/atlas-demo/opencode",
+    "packages": [
+      "@demo/evidence@1.0.0",
+      "@demo/opencode-tools@1.0.0",
+      "@demo/researcher@1.0.0"
+    ],
+    "status": "verified"
+  }
+}

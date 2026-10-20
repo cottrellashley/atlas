@@ -23,3 +23,12 @@ package that owns the behavior; see docs/architecture.md.
 - Do not change an existing user's harness login or global native configuration
   to make tests pass. Test projects, home directories and local servers are isolated.
 - Do not claim WSL/Windows validation from a test run on a regular Linux host.
+- Package distribution is separate from inference drivers. Preserve immutable
+  catalog source/digest identities, configured harness aliases, and native scope.
+- Package changes use internal/install ownership and transactions; never replace
+  an entire user configuration to change one field. Preserve JSONC comments,
+  unrelated settings, shared dependencies, edits and executable file modes.
+- Close acquired artifact.Package snapshots after rendering. Keep archive caches;
+  never cache credentials or publish files outside declared package resources.
+- Native resource gates: scripts/test-packages.sh. Live GitHub tests are explicit,
+  and publishing tests create real releases; use an authorized test catalog.

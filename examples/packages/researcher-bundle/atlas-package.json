@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/researcher",
+  "version": "1.0.0",
+  "kind": "bundle",
+  "description": "Research skill plus the appropriate native harness plugin",
+  "dependencies": [
+    {"source": "@demo/evidence@1.0.0"},
+    {"source": "@demo/claude-tools@1.0.0", "harnesses": ["claude"]},
+    {"source": "@demo/pi-tools@1.0.0", "harnesses": ["pi"]},
+    {"source": "@demo/opencode-tools@1.0.0", "harnesses": ["opencode"]}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/company-project",
+  "version": "1.0.0",
+  "kind": "project-template",
+  "description": "Shared project scaffolding plus an independently managed research skill",
+  "template": "template",
+  "dependencies": [{"source": "@demo/evidence@1.0.0"}]
+}

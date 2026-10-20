@@ -1,0 +1,16 @@
+{
+  "repository": "cottrellashley/atlas-harness-packages",
+  "publishedRelease": "https://github.com/cottrellashley/atlas-harness-packages/releases/tag/atlas-QGRlbW8vZXZpZGVuY2U-v1.1.0",
+  "version": "1.1.0",
+  "passed": [
+    "publish immutable GitHub release with SHA-256",
+    "reject duplicate publication",
+    "update dry-run leaves native resources unchanged",
+    "explicit update installs new native skill content",
+    "cold client restores exact lock without configured catalog alias",
+    "uninstall preserves user edits and reports conflict",
+    "explicit downgrade restores original release",
+    "remove preserves template resources",
+    "shared project template resolves and installs dependency"
+  ]
+}

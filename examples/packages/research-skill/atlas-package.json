@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/evidence",
+  "version": "1.0.0",
+  "kind": "skill",
+  "description": "Shared evidence-based research skill for Claude, Pi and OpenCode",
+  "harnesses": ["claude", "pi", "opencode"],
+  "skills": ["skills/evidence"]
+}

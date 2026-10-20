@@ -1,0 +1,7 @@
+{
+  "company-docs": {
+    "transport": "http",
+    "url": "https://docs.example.com/mcp",
+    "headers": {"Authorization": "Bearer ${COMPANY_DOCS_TOKEN}"}
+  }
+}

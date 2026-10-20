@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/opencode-tools",
+  "version": "1.0.0",
+  "kind": "opencode-plugin",
+  "description": "A small native OpenCode 2 plugin for verifying Atlas distribution",
+  "harnesses": ["opencode"],
+  "native": {"path": "plugin", "target": "server"}
+}

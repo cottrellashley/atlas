@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "@demo/company-docs",
+  "version": "1.0.0",
+  "kind": "mcp",
+  "description": "Company documentation MCP using environment-based configuration",
+  "mcp": "servers.json"
+}

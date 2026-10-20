@@ -1,0 +1,7 @@
+{
+  "name": "atlas-demo-pi-tools",
+  "version": "1.0.0",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {"extensions": ["./extensions/demo.js"]}
+}

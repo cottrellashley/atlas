@@ -1,0 +1,42 @@
+name: Publish an Atlas package
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Reviewed package directory containing atlas-package.json
+        required: true
+        default: examples/packages/research-skill
+permissions:
+  contents: write
+concurrency:
+  group: atlas-package-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Configure required reviewers for this environment in your GitHub repository.
+    environment: package-publish
+    env:
+      PACKAGE_DIRECTORY: ${{ inputs.package }}
+      CATALOG_REPOSITORY: ${{ vars.ATLAS_CATALOG_REPOSITORY || github.repository }}
+      GH_TOKEN: ${{ secrets.ATLAS_PUBLISH_TOKEN || github.token }}
+      ATLAS_HOME: ${{ runner.temp }}/atlas-publisher
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Test and build
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -trimpath -o bin/atlas ./cmd/atlas
+      - name: Validate and publish reviewed release
+        run: |
+          bin/atlas package validate "$PACKAGE_DIRECTORY"
+          CATALOG_HOST="${GITHUB_SERVER_URL#https://}"
+          bin/atlas catalog add company "$CATALOG_REPOSITORY" --host "$CATALOG_HOST" --token-env GH_TOKEN
+          bin/atlas package publish "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA"

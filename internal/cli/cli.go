@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 type App struct {
 	Out, Err io.Writer
@@ -91,7 +91,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Out, "atlas "+Version)
 		return nil
 	case "init":
-		return a.init(args[1:])
+		return a.init(ctx, args[1:])
 	case "templates":
 		return a.templates(args[1:])
 	case "harnesses", "doctor":
@@ -114,7 +114,17 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.permissions(ctx, args[1:])
 	case "configure":
 		return a.configure(ctx, args[1:])
-	case "exec":
+	case "package", "packages":
+		return a.packageCommand(ctx, args[1:])
+	case "catalog":
+		return a.catalog(ctx, args[1:])
+	case "github":
+		return a.github(ctx, args[1:])
+	case "skill":
+		return a.skill(ctx, args[1:])
+	case "mcp":
+		return a.mcp(ctx, args[1:])
+	case "tui", "exec":
 		return a.exec(ctx, args[1:])
 	case "daemon":
 		return a.daemon(ctx, args[1:])
@@ -148,6 +158,15 @@ func (a *App) help() error {
   atlas permissions list ID
   atlas permissions allow|deny ID PERMISSION_ID [--text ANSWER]
   atlas configure ID [--model ID] [--thinking LEVEL] [--native-agent NAME]
+  atlas tui [--harness ID] [--cwd DIR]    Launch the native interactive UI
+  atlas package add SOURCE [--harness ID] [--scope project|user]
+  atlas package search|status|sync|update|remove|validate|publish
+  atlas skill add DIRECTORY|PACKAGE [--harness ID]
+  atlas mcp add NAME --command EXE [--arg ARG] [--harness ID]
+  atlas mcp add NAME --url URL [--harness ID]
+  atlas catalog add|create NAME OWNER/REPO [--host HOST]
+  atlas catalog list|remove
+  atlas github login --token-stdin | status [--host HOST]
   atlas exec [--harness ID] [--cwd DIR] -- [native arguments...]
   atlas daemon start|status|stop
   atlas config path|show
@@ -162,13 +181,16 @@ Atlas runs inside Linux/WSL. Use atlas exec for native interactive login.
 `)
 	return e
 }
-func (a *App) init(args []string) error {
+func (a *App) init(ctx context.Context, args []string) error {
 	f := a.flags("init")
 	h := f.String("harness", "", "configured harness ID")
 	t := f.String("template", "researcher", "template name or directory")
 	cwd := f.String("cwd", ".", "project directory")
 	dry := f.Bool("dry-run", false, "show plan without writing")
 	j := f.Bool("json", false, "JSON plan")
+	cat := f.String("catalog", "", "catalog for shared templates")
+	var packages repeatStrings
+	f.Var(&packages, "package", "package to install after initialization (repeatable)")
 	if e := parse(f, args); e != nil {
 		return e
 	}
@@ -186,9 +208,37 @@ func (a *App) init(args []string) error {
 	if e != nil {
 		return e
 	}
-	plan, e := project.Build(*cwd, a.Home, *h, cfg.Adapter, *t)
+	templateSource := *t
+	remoteTemplate := ""
+	if *t != "researcher" {
+		_, directErr := os.Stat(filepath.Join(*t, "template.json"))
+		_, namedErr := os.Stat(filepath.Join(a.Home, "templates", *t, "template.json"))
+		if directErr != nil && namedErr != nil {
+			resolver, err := a.resolver(*cat)
+			if err != nil {
+				return err
+			}
+			pkg, err := resolver.Fetch(ctx, *t)
+			if err != nil {
+				return err
+			}
+			defer pkg.Close()
+			if pkg.Manifest.Kind != "project-template" {
+				return errors.New("--template requires a project-template package; use --package for bundles, skills, or plugins")
+			}
+			templateSource = filepath.Join(pkg.Root, pkg.Manifest.Template)
+			remoteTemplate = pkg.Source
+		}
+	}
+	plan, e := project.Build(*cwd, a.Home, *h, cfg.Adapter, templateSource)
 	if e != nil {
 		return e
+	}
+	if remoteTemplate != "" {
+		packages = append([]string{remoteTemplate}, packages...)
+	}
+	if len(packages) > 0 {
+		return a.initWithPackages(ctx, *cwd, *cat, cfg, plan, packages, *dry, *j)
 	}
 	if !*dry {
 		if e = project.Apply(*cwd, plan); e != nil {
@@ -202,13 +252,14 @@ func (a *App) init(args []string) error {
 		fmt.Fprintf(a.Out, "%-10s %s\n", file.Action, file.Path)
 	}
 	if *dry {
-		fmt.Fprintln(a.Out, "Dry run; no files written.")
+		fmt.Fprintln(a.Out, "Dry run; no project files written.")
 	} else {
 		fmt.Fprintf(a.Out, "Initialized %s with %s (%s).\n", plan.Project.Template, *h, cfg.Adapter)
 		if cfg.Adapter == "pi" {
 			fmt.Fprintln(a.Out, "Pi project resources require native trust. Review them, then use --trust-project when running with Atlas, or approve through pi.")
 		}
 	}
+
 	return nil
 }
 func (a *App) templates(args []string) error {
