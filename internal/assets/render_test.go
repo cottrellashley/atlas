@@ -48,7 +48,7 @@ func valueAt(t *testing.T, c install.Contribution, path, pointer string) any {
 
 func TestPortableResourcesRenderNativePathsAndValues(t *testing.T) {
 	pkg := resourceFixture(t)
-	for _, harness := range []string{"claude", "pi", "opencode"} {
+	for _, harness := range []string{"claude", "pi", "omp", "opencode"} {
 		for _, scope := range []string{"project", "user"} {
 			t.Run(harness+"/"+scope, func(t *testing.T) {
 				c, err := Render(pkg, harness, scope)
@@ -373,5 +373,128 @@ func TestOpenCode2RejectsIgnoredCLIConfigurationTargets(t *testing.T) {
 				t.Fatalf("accepted config filename not loaded by OpenCode 2: %s", tc.target)
 			}
 		})
+	}
+}
+
+func TestOMPUserSettingsPreserveActiveYAMLFallback(t *testing.T) {
+	for _, viaFile := range []bool{false, true} {
+		name := "config contribution"
+		if viaFile {
+			name = "explicit file target"
+		}
+		t.Run(name, func(t *testing.T) {
+			source, root := t.TempDir(), t.TempDir()
+			writeAsset(t, source, "settings.json", `{"autoResume":false}`, 0644)
+			pkg := artifact.Package{Root: source, Manifest: artifact.Manifest{ID: "@test/omp-settings", Config: map[string]string{"omp": "settings.json"}}}
+			if viaFile {
+				pkg.Manifest.Config = nil
+				pkg.Manifest.Files = map[string]map[string]string{"omp": {".omp/agent/config.yml": "settings.json"}}
+			}
+			original := "# Existing native policy\nquietStartup: true # keep this\n"
+			writeAsset(t, root, ".omp/agent/config.yaml", original, 0600)
+			contribution, err := RenderAt(root, pkg, "omp", "user")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(contribution.Files) != 0 || len(contribution.Values) != 1 || contribution.Values[0].Path != ".omp/agent/config.yaml" {
+				t.Fatalf("OMP fallback must receive owned settings fields: %+v", contribution)
+			}
+			plan, err := install.Plan(root, []install.Contribution{contribution})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := install.Apply(root, plan); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, ".omp/agent/config.yaml")
+			data, err := os.ReadFile(path)
+			if err != nil || !strings.Contains(string(data), "# Existing native policy") || !strings.Contains(string(data), "quietStartup: true") || !strings.Contains(string(data), "# keep this") || !strings.Contains(string(data), "autoResume: false") {
+				t.Fatalf("OMP user choices changed: %s, %v", data, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, ".omp/agent/config.yml")); !os.IsNotExist(err) {
+				t.Fatal("created higher-priority config.yml")
+			}
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm() != 0600 {
+				t.Fatalf("changed settings permissions: %v, %v", info, err)
+			}
+			plan, err = install.Plan(root, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := install.Apply(root, plan); err != nil {
+				t.Fatal(err)
+			}
+			data, _ = os.ReadFile(path)
+			if strings.Contains(string(data), "autoResume") || !strings.Contains(string(data), "quietStartup: true") || !strings.Contains(string(data), "# keep this") {
+				t.Fatalf("uninstall changed existing OMP preferences: %s", data)
+			}
+		})
+	}
+}
+
+func TestOMPSettingsRejectLegacyAndAmbiguousSourcesBeforeWriting(t *testing.T) {
+	source := t.TempDir()
+	writeAsset(t, source, "settings.json", `{"autoResume":false}`, 0644)
+	pkg := artifact.Package{Root: source, Manifest: artifact.Manifest{ID: "@test/omp-settings", Config: map[string]string{"omp": "settings.json"}}}
+	for _, tc := range []struct {
+		scope string
+		paths []string
+	}{
+		{"user", []string{".omp/agent/config.yml", ".omp/agent/config.yaml"}},
+		{"user", []string{".omp/agent/settings.json"}},
+		{"user", []string{".omp/agent/config.json"}},
+		{"user", []string{".omp/agent/agent.db"}},
+		{"project", []string{".omp/settings.json"}},
+	} {
+		t.Run(strings.Join(tc.paths, "+"), func(t *testing.T) {
+			root := t.TempDir()
+			for _, path := range tc.paths {
+				writeAsset(t, root, path, "{}\n", 0600)
+			}
+			if _, err := RenderAt(root, pkg, "omp", tc.scope); err == nil || !strings.Contains(err.Error(), "consolidate") {
+				t.Fatalf("settings source should require native consolidation: %v", err)
+			}
+			for _, path := range tc.paths {
+				data, err := os.ReadFile(filepath.Join(root, path))
+				if err != nil || string(data) != "{}\n" {
+					t.Fatalf("modified native source %s", path)
+				}
+			}
+			// Unrelated skill/MCP installs do not need to migrate user settings.
+			if _, err := RenderAt(root, resourceFixture(t), "omp", tc.scope); err != nil {
+				t.Fatalf("unrelated resources blocked by legacy settings: %v", err)
+			}
+		})
+	}
+}
+
+func TestOMPProjectSettingsUseCanonicalFilename(t *testing.T) {
+	source, root := t.TempDir(), t.TempDir()
+	writeAsset(t, source, "settings.json", `{"autoResume":false}`, 0644)
+	pkg := artifact.Package{Root: source, Manifest: artifact.Manifest{ID: "@test/omp-settings", Config: map[string]string{"omp": "settings.json"}}}
+	// Native OMP only reads config.yaml as a user fallback, not project settings.
+	writeAsset(t, root, ".omp/config.yaml", "unrelated: true\n", 0600)
+	c, err := RenderAt(root, pkg, "omp", "project")
+	if err != nil || len(c.Values) != 1 || c.Values[0].Path != ".omp/config.yml" {
+		t.Fatalf("project settings selected an ignored native filename: %+v, %v", c, err)
+	}
+}
+
+func TestOMPSettingsFileTargetsCannotBypassFieldOwnership(t *testing.T) {
+	source := t.TempDir()
+	writeAsset(t, source, "settings.json", `{"autoResume":false}`, 0644)
+	for _, scope := range []string{"user", "project"} {
+		layout, _ := LayoutFor("omp", scope)
+		for _, name := range []string{"config.yaml", "config.json", "config.jsonc", "config.yml.jsonc", "settings.json", "settings.jsonc", "agent.db", "config.yml/nested.json"} {
+			for _, provider := range []string{"omp", "*"} {
+				t.Run(scope+"/"+provider+"/"+name, func(t *testing.T) {
+					pkg := artifact.Package{Root: source, Manifest: artifact.Manifest{ID: "@test/omp-settings", Files: map[string]map[string]string{provider: {layout.Prefix + "/" + name: "settings.json"}}}}
+					if _, err := Render(pkg, "omp", scope); err == nil {
+						t.Fatal("accepted alternate or opaque main settings target")
+					}
+				})
+			}
+		}
 	}
 }

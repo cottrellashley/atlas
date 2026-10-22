@@ -1,181 +1,153 @@
 # Atlas
 
-A Go CLI for using **OpenCode, Pi, and Claude Code** through one project, package, and session workflow. Atlas 0.2 creates native project resources, shares versioned skills/MCP configurations/plugins through GitHub, and delegates execution to your installed harness. Native tools, model authentication, trust, and conversation storage remain with the provider.
+Atlas sets up your **Claude Code, OpenCode, Pi, and Oh-my-pi** configuration and gets you
+into a native session. Work in the harness you already use; Atlas manages the
+instructions, skills, MCP servers, and shared packages around it.
 
-## Quick start
+## Start or continue
 
-The development copy is installed at `~/.local/bin/atlas`. Run it **inside WSL/Linux**, where your native harnesses are installed and authenticated.
+Run Atlas inside Linux or WSL with your native harnesses installed and authenticated:
+
+```bash
+atlas
+```
+
+Choose **New session** or **Continue session**. Start in the current directory,
+or browse your existing native sessions grouped by harness. Type to search,
+use the arrow keys to select a session, and press Enter to open it.
+
+The same actions have direct commands:
+
+```bash
+atlas new                        # Start a native session here
+atlas new --harness claude        # Choose Claude Code explicitly
+atlas session list               # Find and continue a native session
+atlas resume                     # Open the session browser
+```
+
+No template or Atlas project is required to start. Session history belongs to
+Claude Code, OpenCode, Pi, or Oh-my-pi: Atlas discovers it directly, including sessions
+started outside Atlas. Browsing and resuming require no import or Atlas-managed
+session records.
+
+To resume a known native session or narrow the list:
+
+```bash
+atlas resume NATIVE_SESSION_ID --harness opencode
+atlas session list --harness claude --cwd /path/to/project
+atlas session list --plain        # Print the list without opening the browser
+atlas session list --json         # Machine-readable groups
+```
+
+Use `--harness` to disambiguate native IDs shared by different harnesses.
+`atlas sessions` is an alias for `atlas session`. Without a terminal, session
+listing prints the results. Bare `atlas tui` opens the same menu as `atlas`.
+
+Browsing loads the latest 100 sessions per harness; use `--limit 500` to load
+more. Typing or `--search TEXT` searches that loaded window. Resuming an exact
+native ID looks beyond the browse limit. Pi's all-project view reads its global
+session store; add `--cwd DIR` to find a project's custom private session store.
+
+Migrating from Atlas 0.2: managed `run`/`send`, background-session controls,
+logs, and import/archive commands are retired. Use `atlas new` and `atlas resume`;
+existing Atlas records are preserved.
+
+## Start with an agent setup
+
+Find a reusable setup, then initialize it in your project directory:
 
 ```bash
 mkdir my-research && cd my-research
-atlas init --harness claude --template researcher
-atlas models
-atlas run --agent researcher "Inspect this project and propose a research plan"
+atlas agent list
+atlas init researcher --harness claude
 ```
 
-Choose `opencode`, `pi`, or `claude` for `--harness`. For Pi, review the generated resources, then use `atlas run --trust-project ...` to approve loading them, or approve the directory in Pi's own interface. Atlas leaves native trust and tool permissions in effect.
+Atlas writes the research instructions and native resources, then opens Claude
+Code. Choose `opencode`, `pi`, or `omp` for the other harnesses. In a terminal, omit
+`--harness` to choose interactively when the project has no harness selected.
+The built-in `researcher` template needs no download.
 
-Run the native terminal interface whenever needed:
+`atlas agent list` includes built-in and local templates. Add
+`--catalog company` to include project templates from a configured GitHub
+catalog. Initialize a local directory or a published template the same way:
 
 ```bash
-atlas tui --harness opencode
-atlas tui --harness pi
-atlas tui --harness claude
+atlas init ./my-template --harness opencode
+atlas init @research/company-project@1.0.0 --catalog company --harness claude
 ```
 
-Native arguments follow `--`, for example `atlas exec --harness opencode -- auth login`. `tui` and `exec` hand the terminal directly to the harness; they do not create an Atlas-managed session. Running `opencode`, `pi`, or `claude` directly from the same project loads the same native resources.
+Use `--no-open` for setup only. `--json`, `--dry-run`, and nonterminal initialization
+also suppress launching the harness. The existing `--template NAME` spelling
+remains supported.
 
-## Share skills, MCP servers, and plugins
+## Let your agent manage configuration
 
-Use local resources immediately:
+Ask your agent to add a skill, connect an MCP server, or install your team's
+setup. Atlas keeps these operations available as ordinary CLI commands:
 
 ```bash
 atlas skill add /path/to/skills/evidence
 atlas mcp add company_docs --url https://docs.example.com/mcp \
   --header 'Authorization=Bearer ${COMPANY_DOCS_TOKEN}'
 atlas package status
-atlas tui
 ```
 
-For company distribution, configure a GitHub.com or GitHub Enterprise repository:
+Configuration changes preserve unrelated settings and detect edits to resources
+Atlas owns. Package installs support previews, exact versions, lockfiles, and
+recovery. Native trust, authentication, and tool approvals stay with the harness.
+
+For shared setups, register your team's GitHub catalog:
 
 ```bash
-# Supply GH_TOKEN/GITHUB_TOKEN for GitHub.com, or an Enterprise token for GHE.
-atlas catalog add company platform/agent-packages \
-  --host github.company.example --default
-
+atlas catalog add company platform/agent-packages --default
+atlas agent list --catalog company
 atlas package search research
-atlas package add @research/researcher@1.4.0 --harness opencode --dry-run
-atlas package add @research/researcher@1.4.0 --harness opencode
+atlas package add @research/researcher@1.4.0 --dry-run
+atlas package add @research/researcher@1.4.0
 atlas package sync --locked
-atlas package update @research/researcher --version 1.5.0
-atlas package remove @research/researcher
 ```
 
-GitHub operations use the native Go SDK. No internal API gateway, package server,
-or `gh` executable is required when credentials are supplied through the supported
-environment variables or Atlas login. An existing `gh` login can be used as an
-optional credential bridge. `atlas catalog create` creates a private repository
-by default.
+Use `--harness ID` for configuration commands outside an initialized project.
+GitHub Enterprise is supported with `catalog add --host HOST`.
+See [sharing packages](docs/packages.md) for catalog access, publishing,
+versions, and updates, and [configuration](docs/configuration.md) for custom
+harnesses and templates.
 
-Authors publish ordinary package directories:
+Native arguments can be passed directly through `exec`:
 
 ```bash
-# Paths below are relative to this repository.
-atlas package validate ./examples/packages/research-skill
-atlas package publish ./examples/packages/research-skill --dry-run
-atlas package publish ./examples/packages/research-skill --catalog company
+atlas exec --harness opencode -- auth login
+atlas exec --harness claude -- --resume
 ```
 
-An initialization can include a published template and bundle in one transaction:
-
-```bash
-atlas init --harness claude \
-  --template @research/company-project@1.0.0 \
-  --package @research/researcher@1.4.0
-```
-
-Commit the package declaration and lockfile; teammates run `atlas package sync
---locked` to install the same verified release bytes. Atlas tracks ownership by
-file and configuration key, preserves unrelated settings and JSONC comments,
-detects user edits, and keeps shared dependencies until their last owner is
-removed. Native workspace trust and MCP approval still apply.
-
-Read [Sharing packages](docs/packages.md) for authentication, Enterprise URLs,
-publishing, scopes, locks, updates, and recovery. Read [Native packages](docs/native-packages.md)
-for each provider's plugin format and supported loading behavior.
-
-## Managed work
-
-```bash
-# Foreground: stream the answer and return a nonzero exit code on failure.
-atlas run --model '<exact-model-id>' "Investigate the API"
-
-# Background: print the managed session ID; the Atlas daemon owns the turn.
-atlas run --background "Write a research report"
-atlas sessions list
-atlas logs SESSION_ID --follow
-atlas wait SESSION_ID --timeout 10m
-atlas send SESSION_ID "Focus on authentication"
-atlas stop SESSION_ID
-
-# Configuration changes apply to subsequent turns; actual observed model is
-# recorded separately from the requested model.
-atlas configure SESSION_ID --model '<exact-model-id>'
-atlas send SESSION_ID "Reconsider the tradeoffs"
-
-# Respond to native tool approvals or extension questions.
-atlas permissions list SESSION_ID
-atlas permissions allow SESSION_ID PERMISSION_ID
-atlas permissions deny SESSION_ID PERMISSION_ID
-
-# Native discovery is separate from Atlas's own session index.
-atlas sessions discover --harness pi --cwd . --json
-atlas sessions import --harness pi --handle '<native-id-or-path>' --cwd .
-
-atlas daemon status
-atlas daemon stop
-```
-
-`resume ID "prompt"` is an alias for `send`. A wait timeout leaves work running. Ctrl+C during a foreground `run`/`send` requests cancellation and waits for cleanup; Ctrl+C while following logs only detaches. `stop` is idempotent for an already idle session. You can stop/restart the daemon and continue sessions using the same Atlas IDs.
-
-Do not write to a native conversation from its own CLI while Atlas is running it. Atlas prevents competing writers among its managed sessions, but cannot lock an unrelated native client. Stop the native client before importing its conversation.
-
-## What's included
-
-- Built-in researcher template, local/custom template directories, and GitHub-distributed project templates.
-- Native instruction, skill, MCP, and overlay generation for the three harnesses.
-- GitHub Releases catalogs through `go-github/v82`, exact release digests, dependency bundles, and native Claude/Pi/OpenCode packages.
-- Package ownership for files, JSON keys, and resource-list entries; JSONC comment preservation; conflict checks, dry runs, and journaled recovery.
-- Atomic project initialization with packages, executable resource preservation, and symlink/traversal protection.
-- Configured harness aliases with argv, environment, validated native options, and optional model defaults.
-- Runtime model catalogs; model IDs remain opaque, including their slashes.
-- Streaming text, reasoning/tool/usage events, native approvals, durable logs, native resume handles, and session archive/unarchive.
-- Background execution through a private Unix socket daemon; no network-facing Atlas server and no Windows executable required.
-- Real harness integration tests plus CLI end-to-end tests. See the [verification report](docs/verification.md) for what was actually run and which external model tests require credentials.
-
-This implementation targets the installed **OpenCode 2.1.0, Pi 1.3.0, and Claude Code 2.1.302** protocols. OpenCode v1 is explicitly unsupported. Harness protocols can change: run the integration suite when upgrading them. Native Windows execution is not supported; run Atlas inside WSL.
+Running `claude`, `opencode`, `pi`, or `omp` directly in the project loads the same
+installed resources.
 
 ## Build and test
 
-Go 1.25 or newer is required. Go modules include `google/go-github/v82` for the
-GitHub API and `yaml.v3` for skill frontmatter. Atlas is built as a Go binary;
-the native harness executables must be installed separately.
+Go 1.25 or newer is required. Native harness executables are installed separately.
 
 ```bash
 go build -trimpath -o bin/atlas ./cmd/atlas
 go test ./...
 go vet ./...
-go test -race ./...
 install -m 755 bin/atlas ~/.local/bin/atlas
 ```
 
-On this machine Go 1.27.3 was installed using mise. Without changing your global tool selection, you can build with `mise exec go@1.27.3 -- go build -o bin/atlas ./cmd/atlas`.
-
-Native integration tests are opt-in because they launch harnesses, execute harmless tools in temporary projects, and the Claude tests use authenticated model inference. The other fixtures use local deterministic model responses; that distinction is preserved in the report.
-
-```bash
-ATLAS_PI_E2E=1 go test -v ./internal/adapters/pi -count=1
-ATLAS_OPENCODE_REAL=1 ATLAS_OPENCODE_CLI=1 go test -v ./internal/adapters/opencode -count=1
-ATLAS_TEST_CLAUDE=1 ATLAS_CLAUDE_E2E=1 go test -v ./internal/adapters/claude ./tests -count=1
-
-# Installed native resource/plugin loading, MCP connections, and CLI handoff.
-# These package tests use isolated homes and make no model inference requests.
-ATLAS_PACKAGE_NATIVE=1 ATLAS_ASSETS_NATIVE=1 ATLAS_PACKAGE_CLI_NATIVE=1 \
-  go test -v ./internal/assets -count=1 -timeout=5m
-```
-
-See adapter documentation for external model test flags.
+Native integration tests are opt-in. See [verification](docs/verification.md)
+for the commands, tested harness versions, and which checks use authenticated
+model inference. Native Windows execution is not supported; use WSL.
 
 ## Documentation
 
-- [Company configuration and templates](docs/configuration.md)
+- [Agent workflow](docs/agent-workflow.md)
+- [Configuration and templates](docs/configuration.md)
 - [Sharing and publishing packages through GitHub](docs/packages.md)
 - [Native Claude, Pi, and OpenCode packages](docs/native-packages.md)
+- [Oh-my-pi configuration and native sessions](docs/omp.md)
+- [Claude Code enterprise configuration and checks](docs/enterprise.md)
 - [Architecture and extension boundaries](docs/architecture.md)
-- [Verification, supported versions, and remaining checks](docs/verification.md)
+- [Verification and supported versions](docs/verification.md)
 - [Claude adapter](docs/claude.md), [OpenCode adapter](docs/opencode.md), [Pi adapter](docs/pi.md)
 - [Example company template](examples/templates/company-researcher/template.json)
 - [Example distributable packages](examples/packages/README.md)
-
-The design was informed by a source audit of [Paseo at `068f272`](https://github.com/getpaseo/paseo/tree/068f272a00ffef3f00ec30ec4cfa3a631be97624). The implementation uses the installed native harness protocols directly; Paseo and Node bridges are not runtime dependencies of Atlas.

@@ -4,22 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/cottrellashley/atlas/internal/harness"
 	"github.com/cottrellashley/atlas/internal/process"
-	"github.com/cottrellashley/atlas/internal/store"
 )
 
-// Runs a freshly built CLI, its real background daemon, and the actual installed
-// OpenCode subprocess. The caller supplies a deterministic local LLM endpoint.
+// Runs a freshly built CLI against the installed OpenCode history. The caller
+// has already created native sessions using a deterministic local model endpoint.
 func testOpenCodeCLI(t *testing.T, env map[string]string, root, externalID, externalCWD string) {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
@@ -64,30 +61,7 @@ func testOpenCodeCLI(t *testing.T, env map[string]string, root, externalID, exte
 		}
 		return out
 	}
-	defer func() {
-		// This affects only the freshly created test ATLAS_HOME.
-		if _, err := run("daemon", "stop"); err != nil {
-			t.Errorf("test daemon cleanup failed: %v", err)
-		}
-	}()
-	decodeRecord := func(out []byte) store.Record {
-		t.Helper()
-		var r store.Record
-		if err := json.Unmarshal(out, &r); err != nil || r.ID == "" {
-			t.Fatalf("invalid record: %s (%v)", out, err)
-		}
-		return r
-	}
-	show := func(id string) store.Record { return decodeRecord(must("sessions", "show", id)) }
-	wait := func(id string) store.Record {
-		t.Helper()
-		r := decodeRecord(must("wait", id, "--timeout", "40s", "--json"))
-		if r.State != "idle" || r.Resume == nil {
-			t.Fatalf("completed session state/handle: %+v", r)
-		}
-		return r
-	}
-	must("init", "--harness", "opencode", "--template", "researcher", "--cwd", cwd)
+	must("init", "researcher", "--harness", "opencode", "--cwd", cwd, "--no-open")
 	for _, p := range []string{"AGENTS.md", "opencode.json", ".atlas/project.json", ".opencode/skills/research/SKILL.md"} {
 		if _, err := os.Stat(filepath.Join(cwd, p)); err != nil {
 			t.Fatalf("init expected native file %s: %v", p, err)
@@ -104,113 +78,47 @@ func testOpenCodeCLI(t *testing.T, env map[string]string, root, externalID, exte
 	if !found {
 		t.Fatal("CLI model catalog lacks fixture provider")
 	}
-	first := decodeRecord(must("run", "--background", "--json", "--model", "atlasfixture/echo", "--permission-mode", "deny", "Reply ATLAS_FIXTURE_OK."))
-	first = wait(first.ID)
-	logs := must("logs", first.ID, "--json")
-	dec := json.NewDecoder(bytes.NewReader(logs))
-	lastSeq := int64(0)
-	var text strings.Builder
-	persisted, completed := false, false
-	for {
-		var e harness.Event
-		err := dec.Decode(&e)
-		if err == io.EOF {
-			break
-		}
-		if err != nil || e.Seq <= lastSeq {
-			t.Fatalf("invalid event sequence: %v %s", err, logs)
-		}
-		lastSeq = e.Seq
-		if e.Type == "text" {
-			text.WriteString(e.Text)
-		}
-		persisted = persisted || e.Type == "persistence"
-		completed = completed || e.Type == "turn.completed"
+	type group struct {
+		Harness  string                  `json:"harness"`
+		Sessions []harness.NativeSession `json:"sessions"`
+		Error    string                  `json:"error"`
 	}
-	if text.String() != "ATLAS_FIXTURE_OK" || !persisted || !completed {
-		t.Fatalf("CLI event replay: text=%q persistence=%v completed=%v events=%s", text.String(), persisted, completed, logs)
-	}
-	if got := must("logs", first.ID, "--after", jsonNumber(lastSeq), "--json"); len(bytes.TrimSpace(got)) != 0 {
-		t.Fatalf("log cursor replayed events: %s", got)
-	}
-	must("daemon", "stop")
-	resumed := decodeRecord(must("send", first.ID, "Repeat your previous response.", "--background", "--json"))
-	resumed = wait(resumed.ID)
-	if string(resumed.Resume.Data) != string(first.Resume.Data) {
-		t.Fatal("daemon restart/send changed native session identity")
-	}
-	var discovered []harness.NativeSession
-	if err := json.Unmarshal(must("sessions", "discover", "--json"), &discovered); err != nil || len(discovered) != 1 {
-		t.Fatalf("native discover: %+v %v", discovered, err)
-	}
-	imported := decodeRecord(must("sessions", "import", "--handle", externalID, "--cwd", externalCWD, "--harness", "opencode", "--json"))
-	if imported.ID == first.ID || imported.Resume == nil {
-		t.Fatal("native-only session import did not create an independent Atlas record")
-	}
-	importedAgain := decodeRecord(must("sessions", "import", "--handle", externalID, "--cwd", externalCWD, "--harness", "opencode", "--json"))
-	if importedAgain.ID != imported.ID {
-		t.Fatal("import was not idempotent")
-	}
-	must("send", imported.ID, "Repeat your previous response.", "--background")
-	wait(imported.ID)
-	awaitPermission := func(id string) harness.Permission {
+	list := func(args ...string) []harness.NativeSession {
 		t.Helper()
-		deadline := time.Now().Add(30 * time.Second)
-		for time.Now().Before(deadline) {
-			var permissions []harness.Permission
-			if err := json.Unmarshal(must("permissions", "list", id), &permissions); err != nil {
-				t.Fatal(err)
-			}
-			if len(permissions) != 0 {
-				return permissions[0]
-			}
-			time.Sleep(100 * time.Millisecond)
+		var groups []group
+		argv := append([]string{"session", "list", "--harness", "opencode", "--json"}, args...)
+		out := must(argv...)
+		if err := json.Unmarshal(out, &groups); err != nil || len(groups) != 1 || groups[0].Harness != "opencode" || groups[0].Error != "" {
+			t.Fatalf("native groups: %s %v", out, err)
 		}
-		t.Fatalf("permission did not appear: %+v", show(id))
-		return harness.Permission{}
+		return groups[0].Sessions
 	}
-	denied := decodeRecord(must("run", "--background", "--json", "--permission-mode", "ask", "--model", "atlasfixture/echo", "ATLAS_TOOL_SCENARIO"))
-	permission := awaitPermission(denied.ID)
-	must("permissions", "deny", denied.ID, permission.ID)
-	deniedOutput, deniedError := run("wait", denied.ID, "--timeout", "40s", "--json")
-	deniedResult := decodeRecord(deniedOutput)
-	if deniedError == nil || deniedResult.Resume == nil || !strings.Contains(deniedResult.Error, "interrupted") {
-		t.Fatalf("native permission denial must terminate and preserve identity: %+v error=%v", deniedResult, deniedError)
-	}
-	if _, err := os.Stat(filepath.Join(cwd, "atlas-tool.txt")); !os.IsNotExist(err) {
-		t.Fatalf("denied native shell unexpectedly created marker: %v", err)
-	}
-	approved := decodeRecord(must("run", "--background", "--json", "--permission-mode", "ask", "--model", "atlasfixture/echo", "ATLAS_TOOL_SCENARIO"))
-	permission = awaitPermission(approved.ID)
-	must("permissions", "allow", approved.ID, permission.ID)
-	wait(approved.ID)
-	marker, err := os.ReadFile(filepath.Join(cwd, "atlas-tool.txt"))
-	if err != nil || string(marker) != "ATLAS_TOOL_OK" {
-		t.Fatalf("approved native shell failed: %q %v", marker, err)
-	}
-	canceled := decodeRecord(must("run", "--background", "--json", "--permission-mode", "deny", "--model", "atlasfixture/echo", "ATLAS_CANCEL_SCENARIO"))
-	deadline := time.Now().Add(30 * time.Second)
-	started := false
-	for time.Now().Before(deadline) {
-		if bytes.Contains(must("logs", canceled.ID), []byte("ATLAS_STREAM_STARTED")) {
-			started = true
-			break
+	all := list()
+	found = false
+	for _, session := range all {
+		if session.ID == externalID {
+			found = true
+			if session.CWD != externalCWD {
+				t.Fatalf("global discovery changed native project: %#v", session)
+			}
+			decoded, err := decodeHandle(session.Handle)
+			if err != nil || decoded.SessionID != externalID || decoded.CWD != externalCWD {
+				t.Fatalf("global discovery changed native handle: %#v %v", decoded, err)
+			}
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-	if !started {
-		t.Fatal("cancel test never reached active model stream")
+	if !found {
+		t.Fatalf("global history omitted external native conversation %s: %#v", externalID, all)
 	}
-	must("stop", canceled.ID)
-	stopped := show(canceled.ID)
-	if stopped.State != "stopped" || stopped.Resume == nil {
-		t.Fatalf("stop lost persisted session or did not settle: %+v", stopped)
+	if sessions := list("--cwd", cwd); len(sessions) != 0 {
+		t.Fatalf("fresh project unexpectedly contains native sessions: %#v", sessions)
 	}
-	var listed []store.Record
-	if err := json.Unmarshal(must("sessions", "list", "--all", "--json"), &listed); err != nil || len(listed) != 5 {
-		t.Fatalf("list records=%d err=%v", len(listed), err)
+	filtered := list("--cwd", externalCWD, "--search", externalID)
+	if len(filtered) != 1 || filtered[0].ID != externalID {
+		t.Fatalf("native project/search filters: %#v", filtered)
 	}
-	t.Logf("fresh CLI passed init, models, background run, logs/cursor, wait, restart/send, discover/import/resume, permissions deny/allow, active cancellation, list (%d sessions)", len(listed))
+	if _, err := os.Stat(filepath.Join(home, "sessions")); !os.IsNotExist(err) {
+		t.Fatalf("native browsing created Atlas session records: %v", err)
+	}
+	t.Logf("native CLI passed init --no-open, models, global history, native handles, project filters and search (%d native sessions)", len(all))
 }
-
-func jsonNumber(n int64) string { return string(harness.JSON(n)) }

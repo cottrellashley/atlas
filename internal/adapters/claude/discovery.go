@@ -1,7 +1,7 @@
 package claude
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,18 +24,7 @@ func (d *driver) Discover(ctx context.Context, cwd string, limit int) ([]harness
 	if limit > 500 {
 		limit = 500
 	}
-	configDir := os.Getenv("CLAUDE_CONFIG_DIR")
-	if v, ok := d.cfg.Env["CLAUDE_CONFIG_DIR"]; ok {
-		configDir = v
-	}
-	if configDir == "" {
-		home := d.cfg.Env["HOME"]
-		if home == "" {
-			home, _ = os.UserHomeDir()
-		}
-		configDir = filepath.Join(home, ".claude")
-	}
-	root := filepath.Join(configDir, "projects")
+	root := d.projectsRoot()
 	dirs, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return []harness.NativeSession{}, nil
@@ -78,10 +67,7 @@ func (d *driver) Discover(ctx context.Context, cwd string, limit int) ([]harness
 		}
 	}
 	out := []harness.NativeSession{}
-	for index, f := range files {
-		if index >= 500 {
-			break
-		}
+	for _, f := range files {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -89,15 +75,44 @@ func (d *driver) Discover(ctx context.Context, cwd string, limit int) ([]harness
 		if e != nil || s.CWD == "" {
 			continue
 		}
-		if cwd != "" && filepath.Clean(cwd) != filepath.Clean(s.CWD) {
+		if cwd != "" && !sameProjectPath(cwd, s.CWD) {
 			continue
 		}
 		out = append(out, s)
+		// Limit matching sessions, not candidates from unrelated workspaces.
 		if len(out) >= limit {
 			break
 		}
 	}
 	return out, nil
+}
+
+func (d *driver) projectsRoot() string {
+	configDir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if v, ok := d.cfg.Env["CLAUDE_CONFIG_DIR"]; ok {
+		configDir = v
+	}
+	if configDir == "" {
+		home := d.cfg.Env["HOME"]
+		if home == "" {
+			home, _ = os.UserHomeDir()
+		}
+		configDir = filepath.Join(home, ".claude")
+	}
+	return filepath.Join(configDir, "projects")
+}
+
+func sameProjectPath(a, b string) bool {
+	resolve := func(path string) string {
+		if absolute, err := filepath.Abs(path); err == nil {
+			path = absolute
+		}
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		return filepath.Clean(path)
+	}
+	return resolve(a) == resolve(b)
 }
 
 func readSummary(path string, modified time.Time) (harness.NativeSession, error) {
@@ -113,13 +128,23 @@ func readSummary(path string, modified time.Time) (harness.NativeSession, error)
 		return s, err
 	}
 	const window = int64(256 << 10)
-	read := func(offset, size int64, skipFirst bool) error {
-		scan := bufio.NewScanner(io.NewSectionReader(f, offset, size))
-		scan.Buffer(make([]byte, 64<<10), int(window)+1)
-		if skipFirst {
-			scan.Scan()
+	read := func(offset, size int64) error {
+		data, err := io.ReadAll(io.NewSectionReader(f, offset, size))
+		if err != nil {
+			return err
 		}
-		for scan.Scan() {
+		if offset > 0 {
+			var previous [1]byte
+			if _, err := f.ReadAt(previous[:], offset-1); err != nil {
+				return err
+			}
+			if previous[0] != '\n' {
+				_, data, _ = bytes.Cut(data, []byte{'\n'})
+			}
+		}
+		for len(data) > 0 {
+			line, rest, _ := bytes.Cut(data, []byte{'\n'})
+			data = rest
 			var row struct {
 				Type      string `json:"type"`
 				Sidechain bool   `json:"isSidechain"`
@@ -131,7 +156,7 @@ func readSummary(path string, modified time.Time) (harness.NativeSession, error)
 					Content json.RawMessage `json:"content"`
 				} `json:"message"`
 			}
-			if json.Unmarshal(scan.Bytes(), &row) != nil || row.Sidechain {
+			if json.Unmarshal(line, &row) != nil || row.Sidechain {
 				continue
 			}
 			if row.CWD != "" {
@@ -160,15 +185,16 @@ func readSummary(path string, modified time.Time) (harness.NativeSession, error)
 				s.Title = preview(text)
 			}
 		}
-		return scan.Err()
+		return nil
 	}
-	// Bound transcript bytes inspected even when a session contains huge tool output.
-	if err = read(0, min(stat.Size(), window), false); err != nil {
+	// Inspect at most two fixed windows. A truncated or oversized tool record is
+	// skipped without throwing away metadata already found in other records.
+	if err = read(0, min(stat.Size(), window)); err != nil {
 		return s, err
 	}
 	if stat.Size() > window {
-		offset := max(window, stat.Size()-window)
-		if err = read(offset, stat.Size()-offset, true); err != nil {
+		offset := stat.Size() - window
+		if err = read(offset, window); err != nil {
 			return s, err
 		}
 	}

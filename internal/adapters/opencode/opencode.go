@@ -141,7 +141,7 @@ func decodeHandle(h harness.Handle) (nativeHandle, error) {
 }
 
 func (d *driver) Catalog(ctx context.Context, cwd string) (harness.Catalog, error) {
-	s, err := d.start(ctx)
+	s, err := d.startIn(ctx, cwd)
 	if err != nil {
 		return harness.Catalog{}, err
 	}
@@ -198,7 +198,7 @@ func (d *driver) Discover(ctx context.Context, cwd string, limit int) ([]harness
 	if limit > 1000 {
 		limit = 1000
 	}
-	s, err := d.start(ctx)
+	s, err := d.startIn(ctx, cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (d *driver) Run(ctx context.Context, req harness.RunRequest, emit harness.E
 	if emit == nil {
 		emit = func(harness.Event) error { return nil }
 	}
-	s, err := d.start(ctx)
+	s, err := d.startIn(ctx, req.CWD)
 	if err != nil {
 		return result, err
 	}

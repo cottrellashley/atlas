@@ -10,6 +10,7 @@ import (
 	"github.com/cottrellashley/atlas/internal/config"
 	"github.com/cottrellashley/atlas/internal/daemon"
 	"github.com/cottrellashley/atlas/internal/harness"
+	"github.com/cottrellashley/atlas/internal/picker"
 	"github.com/cottrellashley/atlas/internal/process"
 	"github.com/cottrellashley/atlas/internal/project"
 	"github.com/cottrellashley/atlas/internal/store"
@@ -23,12 +24,14 @@ import (
 	"time"
 )
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 type App struct {
 	Out, Err io.Writer
 	In       io.Reader
 	Home     string
+	choose   func(context.Context, string, []picker.Item) (int, error)
+	launch   func(harness.Config, string, []string) error
 }
 
 func New() (*App, error) {
@@ -80,12 +83,20 @@ func parse(f *flag.FlagSet, args []string) error {
 	}
 	return f.Parse(append(append(options, "--"), positional...))
 }
-func (a *App) Run(ctx context.Context, args []string) error {
+func (a *App) Run(ctx context.Context, args []string) (err error) {
+	defer func() {
+		if errors.Is(err, picker.ErrCanceled) {
+			err = nil
+		}
+	}()
 	if len(args) == 0 {
-		return a.help()
+		return a.home(ctx)
 	}
 	switch args[0] {
 	case "help", "--help", "-h":
+		if len(args) == 2 && args[1] == "agent" {
+			return a.agentHelp()
+		}
 		return a.help()
 	case "version", "--version":
 		fmt.Fprintln(a.Out, "atlas "+Version)
@@ -93,27 +104,19 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "init":
 		return a.init(ctx, args[1:])
 	case "templates":
-		return a.templates(args[1:])
+		return a.agents(ctx, args[1:])
+	case "agent", "agents":
+		return a.agents(ctx, args[1:])
+	case "new":
+		return a.newSession(ctx, args[1:])
 	case "harnesses", "doctor":
 		return a.doctor(ctx, args[1:], args[0] == "doctor")
 	case "models":
 		return a.models(ctx, args[1:])
-	case "run":
-		return a.run(ctx, args[1:])
-	case "send", "resume":
-		return a.send(ctx, args[1:])
-	case "sessions":
-		return a.sessions(ctx, args[1:])
-	case "logs":
-		return a.logs(ctx, args[1:])
-	case "wait":
-		return a.wait(ctx, args[1:])
-	case "stop":
-		return a.stop(ctx, args[1:])
-	case "permissions":
-		return a.permissions(ctx, args[1:])
-	case "configure":
-		return a.configure(ctx, args[1:])
+	case "resume", "continue":
+		return a.nativeSessions(ctx, append([]string{"open"}, args[1:]...))
+	case "session", "sessions":
+		return a.nativeSessions(ctx, args[1:])
 	case "package", "packages":
 		return a.packageCommand(ctx, args[1:])
 	case "catalog":
@@ -124,60 +127,46 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.skill(ctx, args[1:])
 	case "mcp":
 		return a.mcp(ctx, args[1:])
-	case "tui", "exec":
+	case "tui":
+		if len(args) == 1 {
+			return a.home(ctx)
+		}
+		for _, arg := range args[1:] {
+			if arg == "--" {
+				return a.exec(ctx, args[1:])
+			}
+		}
+		return a.newSession(ctx, args[1:])
+	case "exec":
 		return a.exec(ctx, args[1:])
-	case "daemon":
-		return a.daemon(ctx, args[1:])
 	case "config":
 		return a.config(args[1:])
+	case "run", "send", "logs", "wait", "stop", "permissions", "configure", "daemon":
+		return fmt.Errorf("atlas %s has been retired; use atlas new or atlas resume for native harness sessions", args[0])
 	default:
 		return fmt.Errorf("unknown command %q; run atlas help", args[0])
 	}
 }
 func (a *App) help() error {
-	_, e := fmt.Fprint(a.Out, `Atlas — project templates and coding harness sessions
+	_, e := fmt.Fprint(a.Out, `Atlas — set up your agent, then work in your harness
 
-  atlas init --harness opencode|pi|claude --template researcher [--cwd DIR]
-  atlas init --harness pi --template ./my-template --dry-run
-  atlas templates list
-  atlas harnesses                         List configured harnesses
-  atlas doctor [--harness ID] [--deep]      Check binaries; optionally catalogs
-  atlas models [--harness ID] [--cwd DIR] [--json]
-  atlas run [--harness ID] [--agent ROLE] [--model ID] "prompt"
-  atlas run --background "prompt"          Keep running after this command exits
-  atlas sessions list [--all] [--json]
-  atlas sessions show ID
-  atlas sessions discover --harness ID [--cwd DIR]
-  atlas sessions import --harness ID --handle NATIVE_ID [--cwd DIR]
-  atlas sessions archive|unarchive ID
-  atlas send ID "follow-up" [--background]
-  atlas resume ID "follow-up"              Alias for send
-  atlas logs ID [--follow] [--json] [--after SEQ]
-  atlas wait ID [--timeout 10m] [--json]    A wait timeout does not stop work
-  atlas stop ID                           Wait for cancellation and cleanup
-  atlas permissions list ID
-  atlas permissions allow|deny ID PERMISSION_ID [--text ANSWER]
-  atlas configure ID [--model ID] [--thinking LEVEL] [--native-agent NAME]
-  atlas tui [--harness ID] [--cwd DIR]    Launch the native interactive UI
-  atlas package add SOURCE [--harness ID] [--scope project|user]
-  atlas package search|status|sync|update|remove|validate|publish
-  atlas skill add DIRECTORY|PACKAGE [--harness ID]
-  atlas mcp add NAME --command EXE [--arg ARG] [--harness ID]
-  atlas mcp add NAME --url URL [--harness ID]
-  atlas catalog add|create NAME OWNER/REPO [--host HOST]
-  atlas catalog list|remove
-  atlas github login --token-stdin | status [--host HOST]
-  atlas exec [--harness ID] [--cwd DIR] -- [native arguments...]
-  atlas daemon start|status|stop
-  atlas config path|show
+  atlas                         Choose: New session or Continue session
+  atlas new                     Open a new native harness session here
+  atlas agent list              Find available agents / project templates
+  atlas init researcher         Set up Researcher and open your harness
+  atlas session list            Search and open native harness sessions
+  atlas resume [ID]             Continue a native session
 
-Common run flags: --cwd, --model, --thinking, --native-agent, --permission-mode,
---trust-project (Pi only), --background, --json, --timeout. Omit --model to use
-the harness's native default. Model IDs remain native, including their slashes.
+Choose a harness with --harness claude|opencode|pi|omp (or a configured alias).
+Use --cwd DIR to choose a project. Session browsing includes all projects
+unless --cwd is supplied. Type to search, use arrows, and press Enter to open.
 
-Configuration: $ATLAS_HOME/config.json (default ~/.atlas/config.json).
-Native harness installations and authentication remain under your control.
-Atlas runs inside Linux/WSL. Use atlas exec for native interactive login.
+For agents: atlas help agent
+For setup only: atlas init researcher --harness claude --no-open
+For scripts: atlas agent list --json / atlas session list --json
+
+Atlas manages configuration, skills, MCP servers, and packages. Your harness
+owns the conversation. Native installations, login, and trust still apply.
 `)
 	return e
 }
@@ -188,28 +177,42 @@ func (a *App) init(ctx context.Context, args []string) error {
 	cwd := f.String("cwd", ".", "project directory")
 	dry := f.Bool("dry-run", false, "show plan without writing")
 	j := f.Bool("json", false, "JSON plan")
+	noOpen := f.Bool("no-open", false, "set up files without opening the harness")
 	cat := f.String("catalog", "", "catalog for shared templates")
 	var packages repeatStrings
 	f.Var(&packages, "package", "package to install after initialization (repeatable)")
 	if e := parse(f, args); e != nil {
 		return e
 	}
-	if f.NArg() != 0 {
-		return errors.New("init does not accept positional arguments")
+	if f.NArg() > 1 {
+		return errors.New("usage: atlas init [AGENT] [--harness ID] [--no-open]")
 	}
-	if *h == "" {
-		return errors.New("--harness is required")
+	if f.NArg() == 1 {
+		var explicit bool
+		f.Visit(func(v *flag.Flag) {
+			if v.Name == "template" {
+				explicit = true
+			}
+		})
+		if explicit {
+			return errors.New("choose an agent name or --template, not both")
+		}
+		*t = f.Arg(0)
 	}
-	c, e := config.Load(a.Home)
+	open := !*noOpen && !*dry && !*j && a.interactive()
+	cfg, abs, e := a.selectHarness(ctx, *h, *cwd, open, !*j && !*dry)
 	if e != nil {
 		return e
 	}
-	cfg, e := c.Resolve(*h)
-	if e != nil {
-		return e
+	*h, *cwd = cfg.ID, abs
+	if open {
+		if e = a.checkLaunch(cfg, abs, nil, nil); e != nil {
+			return e
+		}
 	}
 	templateSource := *t
 	remoteTemplate := ""
+	closeTemplate := func() error { return nil }
 	if *t != "researcher" {
 		_, directErr := os.Stat(filepath.Join(*t, "template.json"))
 		_, namedErr := os.Stat(filepath.Join(a.Home, "templates", *t, "template.json"))
@@ -223,6 +226,7 @@ func (a *App) init(ctx context.Context, args []string) error {
 				return err
 			}
 			defer pkg.Close()
+			closeTemplate = pkg.Close
 			if pkg.Manifest.Kind != "project-template" {
 				return errors.New("--template requires a project-template package; use --package for bundles, skills, or plugins")
 			}
@@ -234,11 +238,30 @@ func (a *App) init(ctx context.Context, args []string) error {
 	if e != nil {
 		return e
 	}
+	// Rendering copied all template bytes. Close the extraction before exec,
+	// which replaces this process and would not run deferred cleanup.
+	if e = closeTemplate(); e != nil {
+		return e
+	}
+	if open {
+		if e = a.checkLaunch(cfg, abs, nil, &plan.Project); e != nil {
+			return e
+		}
+	}
 	if remoteTemplate != "" {
 		packages = append([]string{remoteTemplate}, packages...)
 	}
+	if e = ctx.Err(); e != nil {
+		return e
+	}
 	if len(packages) > 0 {
-		return a.initWithPackages(ctx, *cwd, *cat, cfg, plan, packages, *dry, *j)
+		if e = a.initWithPackages(ctx, *cwd, *cat, cfg, plan, packages, *dry, *j); e != nil {
+			return e
+		}
+		if open {
+			return a.openNative(ctx, cfg, abs, nil, &plan.Project)
+		}
+		return nil
 	}
 	if !*dry {
 		if e = project.Apply(*cwd, plan); e != nil {
@@ -255,9 +278,9 @@ func (a *App) init(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.Out, "Dry run; no project files written.")
 	} else {
 		fmt.Fprintf(a.Out, "Initialized %s with %s (%s).\n", plan.Project.Template, *h, cfg.Adapter)
-		if cfg.Adapter == "pi" {
-			fmt.Fprintln(a.Out, "Pi project resources require native trust. Review them, then use --trust-project when running with Atlas, or approve through pi.")
-		}
+	}
+	if open {
+		return a.openNative(ctx, cfg, abs, nil, &plan.Project)
 	}
 
 	return nil

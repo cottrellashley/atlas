@@ -74,6 +74,25 @@ func TestDiscoveryPrecedenceAndNativeHandle(t *testing.T) {
 	}
 }
 
+func TestGlobalDiscoveryDoesNotUseCurrentProjectStore(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "project")
+	agentDir := filepath.Join(root, "agent")
+	writeTestJSON(t, filepath.Join(cwd, ".pi", "settings.json"), map[string]any{"sessionDir": "project-only"})
+	writeTestJSON(t, filepath.Join(agentDir, "sessions", "another-project", "session.jsonl"), map[string]any{
+		"type": "session", "id": "outside-current-project", "cwd": filepath.Join(root, "another-project"),
+	})
+	t.Chdir(cwd)
+	d, err := New(harness.Config{Env: map[string]string{"PI_CODING_AGENT_DIR": agentDir, "PI_CODING_AGENT_SESSION_DIR": ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := d.Discover(context.Background(), "", 100)
+	if err != nil || len(sessions) != 1 || sessions[0].ID != "outside-current-project" {
+		t.Fatalf("global native store hidden by current project: %#v %v", sessions, err)
+	}
+}
+
 func TestRunRejectsUnsupportedFlagsBeforeStarting(t *testing.T) {
 	d, _ := New(harness.Config{Command: []string{"missing-pi-binary"}})
 	_, err := d.Run(context.Background(), harness.RunRequest{NativeAgent: "researcher"}, nil, nil)

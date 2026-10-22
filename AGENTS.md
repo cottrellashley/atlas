@@ -4,6 +4,13 @@ Atlas is a Go CLI running inside Linux/WSL. Native harnesses own inference,
 tools, authentication and conversation transcripts. Keep changes scoped to the
 package that owns the behavior; see docs/architecture.md.
 
+The public workflow is native-first: `atlas new`, `atlas init AGENT`, and
+`atlas session list`/`atlas resume` hand the terminal to the native harness.
+Do not create Atlas session records or start its legacy daemon in these flows.
+`internal/native` owns discovery/launch coordination; `internal/picker` restores
+the terminal before handoff. Configuration/package commands remain available to
+agents; `init --no-open`, `--json`, and `--dry-run` never launch a harness.
+
 - Preserve separate configured harness, adapter, model, managed session, turn,
   and native persistence identities. Model IDs are opaque in shared code.
 - A request acknowledgment is not a completed turn. Native cancellation must
@@ -19,14 +26,14 @@ package that owns the behavior; see docs/architecture.md.
   Report deterministic model fixtures separately from genuine model responses.
 - Run gofmt, focused tests, and go vet for changed packages. Use the full race
   gate for shared lifecycle/protocol changes. scripts/test-native.sh exercises
-  all three installed harnesses; read docs/verification.md before running it.
+  all four installed harnesses; read docs/verification.md before running it.
 - Do not change an existing user's harness login or global native configuration
   to make tests pass. Test projects, home directories and local servers are isolated.
 - Do not claim WSL/Windows validation from a test run on a regular Linux host.
 - Package distribution is separate from inference drivers. Preserve immutable
   catalog source/digest identities, configured harness aliases, and native scope.
 - Package changes use internal/install ownership and transactions; never replace
-  an entire user configuration to change one field. Preserve JSONC comments,
+  an entire user configuration to change one field. Preserve JSONC/YAML comments,
   unrelated settings, shared dependencies, edits and executable file modes.
 - Close acquired artifact.Package snapshots after rendering. Keep archive caches;
   never cache credentials or publish files outside declared package resources.

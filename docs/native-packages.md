@@ -1,5 +1,11 @@
 # Native packages and direct provider launches
 
+Oh-my-pi uses the separate `omp` adapter. Portable skills, MCP servers,
+configuration, bundles, and templates are supported; the native plugin kinds
+below are harness-specific and cannot be installed as Oh-my-pi extensions.
+See [Oh-my-pi](omp.md) for its YAML settings and session behavior. Its MCP
+version gate is 18.12.6 or later within major version 18, the verified baseline.
+
 Atlas installs resources in provider-native locations. After installing a package,
 start the provider from the project root with `claude`, `pi`, or `opencode`, or
 use Atlas's native TUI handoff. There is no Atlas runtime loader and no hidden

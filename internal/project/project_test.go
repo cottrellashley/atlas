@@ -19,7 +19,7 @@ func put(t *testing.T, root, path, content string) {
 	}
 }
 func TestBuiltinsAndIdempotence(t *testing.T) {
-	for _, adapter := range []string{"opencode", "pi", "claude"} {
+	for _, adapter := range []string{"opencode", "pi", "omp", "claude"} {
 		t.Run(adapter, func(t *testing.T) {
 			root := t.TempDir()
 			plan, e := Build(root, t.TempDir(), adapter, adapter, "researcher")

@@ -28,7 +28,7 @@ func Home() (string, error) {
 }
 func Load(home string) (Config, error) {
 	c := Config{SchemaVersion: 1, Harnesses: map[string]harness.Config{}}
-	for _, id := range []string{"opencode", "pi", "claude"} {
+	for _, id := range []string{"opencode", "pi", "omp", "claude"} {
 		c.Harnesses[id] = harness.Config{ID: id, Adapter: id, Command: []string{id}}
 	}
 	data, err := os.ReadFile(filepath.Join(home, "config.json"))
@@ -53,7 +53,7 @@ func Load(home string) (Config, error) {
 			h.Adapter = id
 		}
 		switch h.Adapter {
-		case "pi", "opencode", "claude":
+		case "pi", "omp", "opencode", "claude":
 		default:
 			return c, fmt.Errorf("unknown adapter %q", h.Adapter)
 		}

@@ -431,7 +431,7 @@ func plan(root string, base []File, desired []Contribution, metadata ...File) (*
 	for path, s := range current {
 		work[path] = s
 	}
-	docs := map[string]*jsonDocument{}
+	docs := map[string]configurationDocument{}
 	for _, rs := range []map[string]resource{old.Resources, want} {
 		for _, r := range rs {
 			if r.Kind == "file" {
@@ -445,7 +445,7 @@ func plan(root string, base []File, desired []Contribution, metadata ...File) (*
 			if !s.Exists {
 				data = []byte("{}\n")
 			}
-			d, e := parseDocument(data)
+			d, e := parseConfiguration(r.Path, data)
 			if e != nil {
 				return nil, fmt.Errorf("%s: %w", r.Path, e)
 			}
@@ -597,7 +597,10 @@ func plan(root string, base []File, desired []Contribution, metadata ...File) (*
 			if s.Mode == 0 {
 				s.Mode = 0600
 			}
-			s.Data = d.data
+			s.Data, e = d.bytes()
+			if e != nil {
+				return nil, fmt.Errorf("%s: %w", path, e)
+			}
 			work[path] = s
 		}
 		if owned {
@@ -671,7 +674,7 @@ func checkResource(r resource, s snapshot) string {
 		}
 		return ""
 	}
-	d, e := parseDocument(s.Data)
+	d, e := parseConfiguration(r.Path, s.Data)
 	if e != nil {
 		return "configuration is invalid: " + e.Error()
 	}

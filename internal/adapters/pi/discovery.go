@@ -44,6 +44,7 @@ func (d *Driver) configPath(value, cwd string) string {
 	return filepath.Join(cwd, value)
 }
 func (d *Driver) sessionsDir(cwd string) (string, error) {
+	global := cwd == ""
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()
@@ -76,7 +77,11 @@ func (d *Driver) sessionsDir(cwd string) (string, error) {
 		agentDir = d.configPath(agentDir, cwd)
 	}
 	var configured string
-	for _, path := range []string{filepath.Join(agentDir, "settings.json"), filepath.Join(cwd, ".pi", "settings.json")} {
+	settingsPaths := []string{filepath.Join(agentDir, "settings.json")}
+	if !global {
+		settingsPaths = append(settingsPaths, filepath.Join(cwd, ".pi", "settings.json"))
+	}
+	for _, path := range settingsPaths {
 		data, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -101,6 +106,10 @@ func (d *Driver) sessionsDir(cwd string) (string, error) {
 }
 
 func (d *Driver) Discover(ctx context.Context, cwd string, limit int) ([]harness.NativeSession, error) {
+	return d.discover(ctx, cwd, limit, "")
+}
+
+func (d *Driver) discover(ctx context.Context, cwd string, limit int, id string) ([]harness.NativeSession, error) {
 	root, err := d.sessionsDir(cwd)
 	if err != nil {
 		return nil, err
@@ -140,25 +149,24 @@ func (d *Driver) Discover(ctx context.Context, cwd string, limit int) ([]harness
 		return nil, fmt.Errorf("discover Pi sessions: %w", err)
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].modified.After(candidates[j].modified) })
-	if len(candidates) > 500 {
-		candidates = candidates[:500]
-	}
 	sessions := make([]harness.NativeSession, 0, limit)
 	for _, file := range candidates {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		session, readErr := readSessionDescriptor(file.path, file.modified)
-		if readErr != nil {
+		session, readErr := readSessionDescriptorMatching(file.path, file.modified, cwd, id)
+		if readErr != nil || session.ID == "" {
 			continue
 		} // Concurrent append/truncation or non-session JSONL.
-		if cwd != "" && !samePath(cwd, session.CWD) {
-			continue
-		}
 		sessions = append(sessions, session)
+		// Bound full transcript summaries for browsing after the header's cwd
+		// filter. Exact lookup still checks headers throughout the native store.
+		if id == "" && len(sessions) >= 500 {
+			break
+		}
 	}
 	sort.Slice(sessions, func(i, j int) bool { return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt) })
-	if len(sessions) > limit {
+	if id == "" && len(sessions) > limit {
 		sessions = sessions[:limit]
 	}
 	return sessions, nil
@@ -180,6 +188,10 @@ func samePath(a, b string) bool {
 }
 
 func readSessionDescriptor(path string, modified time.Time) (harness.NativeSession, error) {
+	return readSessionDescriptorMatching(path, modified, "", "")
+}
+
+func readSessionDescriptorMatching(path string, modified time.Time, cwd, id string) (harness.NativeSession, error) {
 	var session harness.NativeSession
 	f, err := os.Open(path)
 	if err != nil {
@@ -190,11 +202,12 @@ func readSessionDescriptor(path string, modified time.Time) (harness.NativeSessi
 	if err != nil {
 		return session, err
 	}
-	head, err := io.ReadAll(io.LimitReader(f, 64*1024))
-	if err != nil {
+	// A small bounded header identifies unrelated projects/IDs before reading
+	// transcript windows. Large histories elsewhere cannot hide a matching file.
+	first, err := bufio.NewReader(io.LimitReader(f, 64*1024)).ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
 		return session, err
 	}
-	first, _, _ := bytes.Cut(head, []byte{'\n'})
 	var header struct {
 		Type      string    `json:"type"`
 		ID        string    `json:"id"`
@@ -207,6 +220,13 @@ func readSessionDescriptor(path string, modified time.Time) (harness.NativeSessi
 	if header.Type != "session" || header.ID == "" || header.CWD == "" {
 		return session, errors.New("not a Pi session")
 	}
+	if (cwd != "" && !samePath(cwd, header.CWD)) || (id != "" && id != header.ID) {
+		return session, nil
+	}
+	head, err := io.ReadAll(io.NewSectionReader(f, 0, 64*1024))
+	if err != nil {
+		return session, err
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return session, err
@@ -214,9 +234,9 @@ func readSessionDescriptor(path string, modified time.Time) (harness.NativeSessi
 	session = harness.NativeSession{ID: header.ID, CWD: header.CWD, UpdatedAt: modified, Handle: harness.Handle{Version: 1, Data: harness.JSON(nativeHandle{SessionID: header.ID, SessionFile: absolute})}}
 	var firstPrompt, explicitTitle string
 	consume := func(data []byte) {
-		scanner := bufio.NewScanner(bytes.NewReader(data))
-		scanner.Buffer(make([]byte, 4096), maxRecordBytes)
-		for scanner.Scan() {
+		for len(data) > 0 {
+			line, rest, _ := bytes.Cut(data, []byte{'\n'})
+			data = rest
 			var entry struct {
 				Type      string    `json:"type"`
 				Name      string    `json:"name"`
@@ -228,7 +248,7 @@ func readSessionDescriptor(path string, modified time.Time) (harness.NativeSessi
 					Content json.RawMessage `json:"content"`
 				} `json:"message"`
 			}
-			if json.Unmarshal(scanner.Bytes(), &entry) != nil {
+			if json.Unmarshal(line, &entry) != nil {
 				continue
 			}
 			if entry.Type == "session_info" && entry.Name != "" {
@@ -251,19 +271,17 @@ func readSessionDescriptor(path string, modified time.Time) (harness.NativeSessi
 		if start < 0 {
 			start = 0
 		}
-		if _, err = f.Seek(start, io.SeekStart); err != nil {
-			return session, err
-		}
-		tail, readErr := io.ReadAll(io.LimitReader(f, 256*1024))
+		tail, readErr := io.ReadAll(io.NewSectionReader(f, start, 256*1024))
 		if readErr != nil {
 			return session, readErr
 		}
 		if start > 0 {
-			_, rest, ok := bytes.Cut(tail, []byte{'\n'})
-			if ok {
-				tail = rest
-			} else {
-				tail = nil
+			var previous [1]byte
+			if _, err = f.ReadAt(previous[:], start-1); err != nil {
+				return session, err
+			}
+			if previous[0] != '\n' {
+				_, tail, _ = bytes.Cut(tail, []byte{'\n'})
 			}
 		}
 		consume(tail)

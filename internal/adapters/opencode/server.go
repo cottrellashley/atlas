@@ -30,11 +30,36 @@ type server struct {
 	temp                    string
 }
 
+type responseError struct {
+	status  int
+	message string
+}
+
+func (e *responseError) Error() string { return e.message }
+
 var listening = regexp.MustCompile(`server listening on (http://127\.0\.0\.1:[0-9]+)`)
 
 func (d *driver) start(ctx context.Context) (*server, error) {
+	return d.startIn(ctx, "")
+}
+
+// Resolve the configured executable in the caller's project before starting
+// the native server in an isolated directory. Relative commands and PATH
+// entries belong to the invocation, not the server's temporary workspace.
+func (d *driver) startIn(ctx context.Context, cwd string) (*server, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	executable, err := process.ResolveExecutable(d.config, cwd)
+	if err != nil {
+		return nil, fmt.Errorf("start OpenCode: %w", err)
 	}
 	dir, err := os.MkdirTemp("", "atlas-opencode-host-")
 	if err != nil {
@@ -48,6 +73,20 @@ func (d *driver) start(ctx context.Context) (*server, error) {
 	lifetime, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s := &server{password: hex.EncodeToString(key), client: &http.Client{Transport: &http.Transport{Proxy: nil}}, cancel: cancel, exited: make(chan struct{}), temp: dir}
 	cfg := d.config
+	cfg.Command = []string{executable}
+	literal := false
+	for _, arg := range d.config.Command[1:] {
+		if arg == "--" {
+			literal = true
+		}
+		// The interactive CLI accepts --standalone, but its explicit serve
+		// command rejects it. An Atlas-owned private server already supplies
+		// that behavior. Do not reinterpret arguments after a literal delimiter.
+		if arg == "--standalone" && !literal {
+			continue
+		}
+		cfg.Command = append(cfg.Command, arg)
+	}
 	cfg.Env = map[string]string{}
 	for k, v := range d.config.Env {
 		cfg.Env[k] = v
@@ -144,7 +183,7 @@ func (s *server) request(ctx context.Context, method, path string, body any) (*h
 		if message == "" {
 			message = http.StatusText(res.StatusCode)
 		}
-		return nil, fmt.Errorf("OpenCode %s %s returned HTTP %d: %s", method, path, res.StatusCode, message)
+		return nil, &responseError{status: res.StatusCode, message: fmt.Sprintf("OpenCode %s %s returned HTTP %d: %s", method, path, res.StatusCode, message)}
 	}
 	return res, nil
 }

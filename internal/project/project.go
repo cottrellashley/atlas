@@ -132,6 +132,8 @@ func read(root, path string) ([]byte, error) {
 func encode(v any) []byte  { b, _ := json.MarshalIndent(v, "", "  "); return append(b, '\n') }
 func hash(b []byte) string { v := sha256.Sum256(b); return hex.EncodeToString(v[:]) }
 
+const ResearcherVersion = "1.1.0"
+
 const researcherInstructions = `# Researcher
 
 You are the project's researcher. Establish the question and constraints, inspect
@@ -142,6 +144,12 @@ uncertainty and contradictions. Never invent citations or claim unrun tests pass
 For substantial research, keep a reproducible report in research/ with the
 question, findings, source links, and open questions. Ask before destructive
 actions. Keep credentials out of reports and version control.
+
+For requested setup changes, use atlas help agent. Atlas can add skills, MCP
+servers, and shared packages to this project's native configuration. Preview
+changes with --dry-run --json and preserve existing user edits. Use --no-open
+when initializing another project from a running agent. Conversations remain
+in the native harness; atlas session list browses their history.
 `
 const researchSkill = `---
 name: research
@@ -169,12 +177,12 @@ func Build(root, home, harnessID, adapter, template string) (Plan, error) {
 	m := Manifest{}
 	modes := map[string]fs.FileMode{}
 	servers := map[string]MCPServer{}
-	prefix := map[string]string{"claude": ".claude", "pi": ".pi", "opencode": ".opencode"}[adapter]
+	prefix := map[string]string{"claude": ".claude", "pi": ".pi", "omp": ".omp", "opencode": ".opencode"}[adapter]
 	if prefix == "" {
 		return plan, fmt.Errorf("unsupported template adapter %q", adapter)
 	}
 	if template == "researcher" {
-		m = Manifest{SchemaVersion: 1, ID: "researcher", Version: "1.0.0", Agents: map[string]Agent{"researcher": {}}}
+		m = Manifest{SchemaVersion: 1, ID: "researcher", Version: ResearcherVersion, Agents: map[string]Agent{"researcher": {}}}
 		outputs["AGENTS.md"] = []byte(researcherInstructions)
 		outputs[prefix+"/skills/research/SKILL.md"] = []byte(researchSkill)
 	} else {
@@ -357,6 +365,10 @@ func Build(root, home, harnessID, adapter, template string) (Plan, error) {
 	case "pi":
 		native[".pi/settings.json"] = map[string]any{}
 		native[".pi/mcp.json"] = map[string]any{"mcpServers": nativeMCP}
+	case "omp":
+		// OMP owns config.yml. An empty template has no settings to contribute;
+		// leave existing YAML, comments, and policy choices untouched.
+		native[".omp/mcp.json"] = map[string]any{"mcpServers": nativeMCP}
 	}
 	for path, v := range native {
 		if b, ok := outputs[path]; ok {

@@ -40,14 +40,7 @@ func newCLIFixture(t *testing.T, driver harness.Driver, cwd, root string) *cliFi
 	home := filepath.Join(root, "atlas-home")
 	writeTestJSON(t, filepath.Join(home, "config.json"), map[string]any{"schemaVersion": 1, "harnesses": map[string]any{"pi": driver.(*Driver).cfg}})
 	c := &cliFixture{t: t, binary: binary, cwd: cwd, env: process.Environment(map[string]string{"ATLAS_HOME": home})}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, binary, "daemon", "stop")
-		cmd.Env = c.env
-		cmd.Dir = c.cwd
-		_ = cmd.Run()
-	})
+
 	return c
 }
 
@@ -75,144 +68,80 @@ func (c *cliFixture) must(args ...string) string {
 	return out
 }
 
-func TestInstalledPiFullCLIBackgroundResumeDiscoveryImport(t *testing.T) {
+func TestInstalledPiNativeCLIDiscoveryAcrossProjects(t *testing.T) {
 	fixture := &modelFixture{t: t}
 	server := httptest.NewServer(fixture)
 	defer server.Close()
 	d, cwd, root := nativeFixtureDriver(t, server.URL)
 	c := newCLIFixture(t, d, cwd, root)
-	c.must("init", "--harness", "pi", "--template", "researcher")
+	c.must("init", "researcher", "--harness", "pi", "--no-open")
 	for _, rel := range []string{"AGENTS.md", ".pi/skills/research/SKILL.md", ".pi/settings.json", ".pi/mcp.json", ".atlas/project.json"} {
 		if _, err := os.Stat(filepath.Join(cwd, rel)); err != nil {
 			t.Fatalf("init did not create %s: %v", rel, err)
 		}
 	}
+	if out := c.must("agent", "list", "--json"); !strings.Contains(out, "researcher") {
+		t.Fatalf("agent templates missing researcher: %s", out)
+	}
 	if out := c.must("models", "--harness", "pi", "--json"); !strings.Contains(out, "atlas-fixture/test-model") {
 		t.Fatalf("CLI catalog: %s", out)
 	}
-	id := strings.TrimSpace(c.must("run", "--harness", "pi", "--model", "atlas-fixture/test-model", "--background", "--trust-project", "/skill:research Read facts.txt and answer."))
-	if len(id) != 32 {
-		t.Fatalf("background did not return managed ID: %q", id)
-	}
-	var finished struct {
-		State  string          `json:"state"`
-		Resume *harness.Handle `json:"resume"`
-	}
-	if err := json.Unmarshal([]byte(c.must("wait", id, "--timeout", "20s", "--json")), &finished); err != nil {
-		t.Fatal(err)
-	}
-	if finished.State != "idle" || finished.Resume == nil {
-		t.Fatalf("background did not persist completion: %#v", finished)
-	}
-	logs := c.must("logs", id, "--json")
-	if !strings.Contains(logs, "fixture-first-answer") || !strings.Contains(logs, `"type":"tool"`) {
-		t.Fatalf("CLI logs missing native output/tool: %s", logs)
-	}
-	c.must("send", id, "Recall earlier answer.", "--background")
-	c.must("wait", id, "--timeout", "20s")
-	if !strings.Contains(c.must("logs", id), "fixture-resumed-answer") {
-		t.Fatal("CLI send did not resume native conversation")
-	}
-	var discovered []harness.NativeSession
-	if err := json.Unmarshal([]byte(c.must("sessions", "discover", "--harness", "pi", "--json")), &discovered); err != nil || len(discovered) != 1 {
-		t.Fatalf("CLI discover: %#v %v", discovered, err)
-	}
-	// Create a second native conversation outside Atlas's manager, then import it.
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	native, err := d.Run(ctx, harness.RunRequest{CWD: cwd, SessionID: "external-native-fixture", Prompt: "This conversation originated outside Atlas.", Model: "atlas-fixture/test-model"}, nil, nil)
-	if err != nil {
+	approved := true
+	d.(*Driver).opts.Approve = &approved
+	first, err := d.Run(ctx, harness.RunRequest{CWD: cwd, SessionID: "external-native-fixture", Prompt: "/skill:research Read facts.txt and answer.", Model: "atlas-fixture/test-model"}, nil, nil)
+	if err != nil || first.Handle == nil {
+		t.Fatalf("native conversation: %#v %v", first, err)
+	}
+	otherCWD := filepath.Join(root, "another-project")
+	if err := os.MkdirAll(otherCWD, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if native.Handle == nil {
-		t.Fatal("missing external native handle")
+	other, err := d.Run(ctx, harness.RunRequest{CWD: otherCWD, SessionID: "other-native-fixture", Prompt: "A separate project conversation.", Model: "atlas-fixture/test-model"}, nil, nil)
+	if err != nil || other.Handle == nil {
+		t.Fatalf("second native conversation: %#v %v", other, err)
 	}
-	imported := strings.TrimSpace(c.must("sessions", "import", "--harness", "pi", "--handle", "external-native-fixture"))
-	if imported == id || len(imported) != 32 {
-		t.Fatalf("import did not create separate managed identity: %q", imported)
+	type group struct {
+		Harness  string                  `json:"harness"`
+		Sessions []harness.NativeSession `json:"sessions"`
+		Error    string                  `json:"error"`
 	}
-	c.must("send", imported, "Continue imported session.", "--background")
-	c.must("wait", imported, "--timeout", "20s")
-	if !strings.Contains(c.must("sessions", "list", "--json"), imported) {
-		t.Fatal("import missing in managed listing")
+	list := func(args ...string) []harness.NativeSession {
+		t.Helper()
+		var groups []group
+		argv := append([]string{"session", "list", "--harness", "pi", "--json"}, args...)
+		out := c.must(argv...)
+		if err := json.Unmarshal([]byte(out), &groups); err != nil || len(groups) != 1 || groups[0].Harness != "pi" || groups[0].Error != "" {
+			t.Fatalf("native groups: %s %v", out, err)
+		}
+		return groups[0].Sessions
 	}
-	if again := strings.TrimSpace(c.must("sessions", "import", "--harness", "pi", "--handle", "external-native-fixture")); again != imported {
-		t.Fatalf("import created duplicate native ownership: %q != %q", again, imported)
+	all := list()
+	if len(all) != 2 {
+		t.Fatalf("global native history omitted another project: %#v", all)
+	}
+	filtered := list("--cwd", cwd)
+	if len(filtered) != 1 || filtered[0].ID != "external-native-fixture" || filtered[0].CWD != cwd {
+		t.Fatalf("filtered native identity: %#v", filtered)
+	}
+	actualHandle, handleErr := decodeHandle(filtered[0].Handle)
+	expectedHandle, originalErr := decodeHandle(*first.Handle)
+	if handleErr != nil || originalErr != nil || actualHandle != expectedHandle {
+		t.Fatalf("discovered native handle changed: %#v != %#v (%v, %v)", actualHandle, expectedHandle, handleErr, originalErr)
+	}
+	searched := list("--search", "other-native-fixture")
+	if len(searched) != 1 || searched[0].ID != "other-native-fixture" {
+		t.Fatalf("native search: %#v", searched)
+	}
+	if _, err := os.Stat(filepath.Join(root, "atlas-home", "sessions")); !os.IsNotExist(err) {
+		t.Fatalf("native browsing created Atlas session records: %v", err)
 	}
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
-	if !fixture.observedTool || !fixture.observedMemory {
-		t.Fatalf("CLI flow bypassed native tool/context: tool=%v memory=%v", fixture.observedTool, fixture.observedMemory)
+	if !fixture.observedTool {
+		t.Fatal("native session fixture did not execute its tool")
 	}
-	loadedSkill := false
-	for _, request := range fixture.requests {
-		for _, message := range request.Messages {
-			if strings.Contains(string(message.Content), "State the question, scope and success criteria") {
-				loadedSkill = true
-			}
-		}
-	}
-	if !loadedSkill {
-		t.Fatal("generated researcher skill body was not expanded into native model request")
-	}
-}
-
-func TestInstalledPiFullCLIPermissionsAndStop(t *testing.T) {
-	fixture := &modelFixture{t: t}
-	fixture.calls.Store(1)
-	server := httptest.NewServer(fixture)
-	defer server.Close()
-	d, cwd, root := nativeFixtureDriver(t, server.URL)
-	extension := filepath.Join(root, "cli-approval.ts")
-	source := `export default function(pi) { pi.on("before_agent_start",async(_event,ctx)=>{const accepted=await ctx.ui.confirm("Atlas CLI fixture","Allow fixture?");ctx.ui.notify(accepted?"fixture-allowed":"fixture-denied","info");}); }`
-	if err := os.WriteFile(extension, []byte(source), 0600); err != nil {
-		t.Fatal(err)
-	}
-	d.(*Driver).cfg.Command = append(d.(*Driver).cfg.Command, "--extension", extension)
-	c := newCLIFixture(t, d, cwd, root)
-	for _, action := range []string{"allow", "deny"} {
-		id := strings.TrimSpace(c.must("run", "--harness", "pi", "--model", "atlas-fixture/test-model", "--background", "Reply."))
-		permissionID := waitCLIPermission(t, c, id)
-		c.must("permissions", action, id, permissionID)
-		c.must("wait", id, "--timeout", "20s")
-		want := "fixture-allowed"
-		if action == "deny" {
-			want = "fixture-denied"
-		}
-		if logs := c.must("logs", id, "--json"); !strings.Contains(logs, want) {
-			t.Fatalf("native extension did not receive %s: %s", action, logs)
-		}
-	}
-	// Cancel while the real native extension is blocked waiting for a dialog.
-	id := strings.TrimSpace(c.must("run", "--harness", "pi", "--model", "atlas-fixture/test-model", "--background", "Reply."))
-	_ = waitCLIPermission(t, c, id)
-	c.must("stop", id)
-	var record struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal([]byte(c.must("sessions", "show", id)), &record); err != nil {
-		t.Fatal(err)
-	}
-	if record.State != "stopped" {
-		t.Fatalf("stop returned before cancellation: %#v", record)
-	}
-}
-
-func waitCLIPermission(t *testing.T, c *cliFixture, id string) string {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		var permissions []harness.Permission
-		if err := json.Unmarshal([]byte(c.must("permissions", "list", id)), &permissions); err != nil {
-			t.Fatal(err)
-		}
-		if len(permissions) > 0 {
-			return permissions[0].ID
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatal("native extension permission did not arrive")
-	return ""
 }
 
 func TestInstalledPiFullCLITemplateMCP(t *testing.T) {
@@ -247,12 +176,21 @@ func TestInstalledPiFullCLITemplateMCP(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(template, "skills/probe/SKILL.md"), []byte("---\nname: probe\ndescription: Verify the Atlas MCP fixture.\n---\n\natlas-pi-loaded-custom-skill-marker\nCall the echo MCP tool.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c.must("init", "--harness", "pi", "--template", template)
-	id := strings.TrimSpace(c.must("run", "--harness", "pi", "--model", "atlas-fixture/test-model", "--background", "--trust-project", "/skill:probe Verify the configured tool."))
-	c.must("wait", id, "--timeout", "20s")
-	logs := c.must("logs", id, "--json")
-	if !strings.Contains(logs, "atlas-pi-mcp-executed-marker") {
-		t.Fatalf("real MCP result missing in native event log: %s", logs)
+	c.must("init", "--harness", "pi", "--template", template, "--no-open")
+	approved := true
+	d.(*Driver).opts.Approve = &approved
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var logs strings.Builder
+	_, err = d.Run(ctx, harness.RunRequest{CWD: cwd, Prompt: "/skill:probe Verify the configured tool.", Model: "atlas-fixture/test-model"}, func(event harness.Event) error {
+		logs.Write(harness.JSON(event))
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "atlas-pi-mcp-executed-marker") {
+		t.Fatalf("real MCP result missing in native event log: %s", logs.String())
 	}
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()

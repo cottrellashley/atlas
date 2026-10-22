@@ -168,7 +168,7 @@ func (a *App) github(ctx context.Context, args []string) error {
 
 func packageRoot(cwd, scope string) (string, error) {
 	if scope == "user" {
-		for _, key := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR"} {
+		for _, key := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_CONFIG_DIR", "OMP_PROFILE", "PI_PROFILE", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR"} {
 			if os.Getenv(key) != "" {
 				return "", fmt.Errorf("user scope with %s override is not supported; use project scope or the native installer", key)
 			}
@@ -262,7 +262,7 @@ func (a *App) packageCommand(ctx context.Context, args []string) error {
 			case "opencode-plugin":
 				hs = []string{"opencode"}
 			default:
-				hs = []string{"claude", "pi", "opencode"}
+				hs = []string{"claude", "pi", "omp", "opencode"}
 			}
 		}
 		for _, h := range hs {
@@ -508,9 +508,22 @@ func checkUserEnvironment(cfg harness.Config) error {
 	if cfg.Env["HOME"] != "" && cfg.Env["HOME"] != os.Getenv("HOME") {
 		return errors.New("user scope cannot target a configured HOME override")
 	}
-	for _, key := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR"} {
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_CONFIG_DIR", "OMP_PROFILE", "PI_PROFILE", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR"} {
 		if cfg.Env[key] != "" {
 			return fmt.Errorf("user scope cannot target configured %s override", key)
+		}
+	}
+	if cfg.Adapter == "omp" {
+		if _, configured := cfg.Options["profile"]; configured {
+			return errors.New("user scope cannot target an Oh-my-pi profile override; use project scope or the native installer")
+		}
+		for i, arg := range cfg.Command {
+			if i == 0 {
+				continue
+			}
+			if arg == "--profile" || strings.HasPrefix(arg, "--profile=") {
+				return errors.New("user scope cannot target an Oh-my-pi profile override; use project scope or the native installer")
+			}
 		}
 	}
 	return nil

@@ -441,14 +441,15 @@ func CheckNativeVersion(ctx context.Context, cfg harness.Config, cwd string, pkg
 	// Pi added native MCP configuration in the tested 1.3 line. Older Pi
 	// executables otherwise silently ignore a successfully installed mcp.json.
 	needsPiMCP := cfg.Adapter == "pi" && pkg.Manifest.MCP != ""
-	if pkg.Manifest.Native == nil && !needsPiMCP {
+	needsOMPMCP := cfg.Adapter == "omp" && pkg.Manifest.MCP != ""
+	if pkg.Manifest.Native == nil && !needsPiMCP && !needsOMPMCP {
 		return nil
 	}
 	feature := "native packages"
-	if needsPiMCP && pkg.Manifest.Native == nil {
+	if (needsPiMCP || needsOMPMCP) && pkg.Manifest.Native == nil {
 		feature = "native MCP servers"
 	}
-	minimum := map[string][3]int{"claude": {2, 1, 302}, "pi": {1, 3, 0}, "opencode": {2, 1, 0}}
+	minimum := map[string][3]int{"claude": {2, 1, 302}, "pi": {1, 3, 0}, "omp": {18, 12, 6}, "opencode": {2, 1, 0}}
 	want, ok := minimum[cfg.Adapter]
 	if !ok {
 		return fmt.Errorf("unsupported native package harness %q", cfg.Adapter)

@@ -52,6 +52,12 @@ func LayoutFor(harness, scope string) (Layout, error) {
 			prefix = ".pi/agent"
 		}
 		return Layout{prefix, prefix + "/settings.json", prefix + "/mcp.json", "/mcpServers"}, nil
+	case "omp":
+		prefix := ".omp"
+		if user {
+			prefix = ".omp/agent"
+		}
+		return Layout{prefix, prefix + "/config.yml", prefix + "/mcp.json", "/mcpServers"}, nil
 	case "opencode":
 		prefix, settings := ".opencode", "opencode.json"
 		if user {
@@ -128,6 +134,13 @@ func Render(pkg artifact.Package, harness, scope string) (install.Contribution, 
 				if err != nil {
 					return out, err
 				}
+				if harness == "omp" {
+					for _, file := range files {
+						if ompMainSettings(file.Path, layout) {
+							return out, fmt.Errorf("OMP settings %s must use a config contribution or an explicit %s file target, not a copied directory", file.Path, layout.Settings)
+						}
+					}
+				}
 				out.Files = append(out.Files, files...)
 			}
 		}
@@ -148,13 +161,19 @@ func Render(pkg artifact.Package, harness, scope string) (install.Contribution, 
 	return out, nil
 }
 
-// RenderAt selects an existing native JSONC configuration rather than creating
-// an overriding JSON file. The install engine preserves its comments. Reading
-// either file here does not authorize changing its contents; Plan checks them.
+// RenderAt selects an existing native configuration filename rather than
+// creating an overriding source. The install engine preserves its comments.
+// Reading a file here does not authorize changing its contents; Plan checks it.
 func RenderAt(root string, pkg artifact.Package, harness, scope string) (install.Contribution, error) {
 	out, err := Render(pkg, harness, scope)
-	if err != nil || harness != "opencode" {
+	if err != nil {
 		return out, err
+	}
+	if harness == "omp" {
+		return selectOMPSettings(root, scope, out)
+	}
+	if harness != "opencode" {
+		return out, nil
 	}
 	layout, _ := LayoutFor(harness, scope)
 	// OpenCode 2 CLI settings use exactly the user-level cli.json filename.
@@ -179,6 +198,66 @@ func RenderAt(root string, pkg artifact.Package, harness, scope string) (install
 					out.Values[i].Path = alternative
 				}
 			}
+		}
+	}
+	return out, nil
+}
+
+// OMP's user settings choose config.yml before config.yaml. Project settings
+// read only config.yml, while legacy settings.json contributes a separate
+// layer. Never create a new settings source that hides existing user choices.
+func selectOMPSettings(root, scope string, out install.Contribution) (install.Contribution, error) {
+	layout, _ := LayoutFor("omp", scope)
+	settings := false
+	for _, value := range out.Values {
+		settings = settings || value.Path == layout.Settings
+	}
+	if !settings {
+		return out, nil
+	}
+	exists := func(path string) (bool, error) {
+		_, err := os.Lstat(filepath.Join(root, path))
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	canonical, err := exists(layout.Settings)
+	if err != nil {
+		return out, err
+	}
+	selected := layout.Settings
+	if scope == "user" {
+		alternate := layout.Prefix + "/config.yaml"
+		fallback, err := exists(alternate)
+		if err != nil {
+			return out, err
+		}
+		if canonical && fallback {
+			return out, fmt.Errorf("both %s and %s exist; consolidate OMP settings before installing configuration packages", layout.Settings, alternate)
+		}
+		if fallback {
+			selected = alternate
+		}
+	}
+	legacy := []string{layout.Prefix + "/settings.json"}
+	if scope == "user" && !canonical && selected == layout.Settings {
+		// Native startup can migrate legacy settings from agent.db. Atlas must
+		// not suppress that migration by writing the first YAML config itself.
+		legacy = append(legacy, layout.Prefix+"/agent.db", layout.Prefix+"/config.json")
+	}
+	for _, path := range legacy {
+		present, err := exists(path)
+		if err != nil {
+			return out, err
+		}
+		if present {
+			return out, fmt.Errorf("existing OMP %s: migrate or consolidate settings with native OMP before installing configuration packages; Atlas will not shadow a legacy settings source", path)
+		}
+	}
+	for i := range out.Values {
+		if out.Values[i].Path == layout.Settings {
+			out.Values[i].Path = selected
 		}
 	}
 	return out, nil
@@ -360,6 +439,9 @@ func allowedTarget(path, harness, scope string, layout Layout) bool {
 			return false
 		}
 	}
+	if harness == "omp" && ompMainSettings(clean, layout) && clean != layout.Settings {
+		return false
+	}
 	if strings.HasPrefix(clean, layout.Prefix+"/") || clean == layout.Settings || clean == layout.MCP {
 		return true
 	}
@@ -369,8 +451,18 @@ func allowedTarget(path, harness, scope string, layout Layout) bool {
 	return clean == "AGENTS.md" || harness == "claude" && clean == "CLAUDE.md" || harness == "opencode" && clean == "opencode.jsonc"
 }
 
+func ompMainSettings(path string, layout Layout) bool {
+	path = filepath.ToSlash(filepath.Clean(path))
+	for _, main := range []string{layout.Settings, layout.Prefix + "/config.yaml", layout.Prefix + "/config.json", layout.Prefix + "/config.jsonc", layout.Prefix + "/config.yml.jsonc", layout.Prefix + "/settings.json", layout.Prefix + "/settings.jsonc", layout.Prefix + "/agent.db"} {
+		if path == main || strings.HasPrefix(path, main+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func nativeJSON(path string, layout Layout) bool {
-	return path == layout.Settings || path == layout.MCP || path == strings.TrimSuffix(layout.Settings, ".json")+".jsonc" || path == layout.Prefix+"/settings.local.json" || path == layout.Prefix+"/models.json" || path == ".config/opencode/cli.json"
+	return path == layout.Settings || path == layout.MCP || strings.HasSuffix(layout.Settings, ".json") && path == strings.TrimSuffix(layout.Settings, ".json")+".jsonc" || path == layout.Prefix+"/settings.local.json" || path == layout.Prefix+"/models.json" || path == ".config/opencode/cli.json"
 }
 
 // SkillMetadata is the portable Agent Skills identity. The complete SKILL.md is
@@ -537,7 +629,7 @@ func renderServer(name string, s MCPServer, harness string) (map[string]any, err
 		return nil, fmt.Errorf("MCP %s has unsupported transport %q; use stdio or http", name, s.Transport)
 	}
 	for provider, overlay := range s.Native {
-		if provider != "claude" && provider != "pi" && provider != "opencode" {
+		if provider != "claude" && provider != "pi" && provider != "omp" && provider != "opencode" {
 			return nil, fmt.Errorf("MCP %s has unknown native harness %q", name, provider)
 		}
 		if provider == harness {

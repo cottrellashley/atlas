@@ -1,5 +1,111 @@
 # Verification report
 
+## Final compatibility checks — 2026-10-22
+
+Tested on Linux x86_64 with Go 1.27.3. The combined installed-harness suite
+passed **180 top-level tests**, with **no failures or race reports**. Eleven
+top-level skips were eight subprocess helpers and three opt-in checks for a
+live GitHub catalog or external Pi/OpenCode model credentials. Those skips are
+not counted as successful native checks. `go vet ./...` and the CLI build passed.
+Local detailed output is in ignored `test-results/final-native-20261022.jsonl`.
+After the settings-filename review, the affected configuration/package suite
+passed another **73 top-level tests**, with two expected optional/helper skips
+and no failures or races (`test-results/final-config-20261022.jsonl`). This
+includes four new OMP regressions for active user `config.yaml`, ambiguous or
+legacy settings, project filename semantics, and package target restrictions.
+These counts overlap the combined suite; they are not additive. A compact
+[machine-readable report](verification/compatibility-20261022.json) records
+the run boundaries.
+
+| Harness | Installed version | Verified behavior |
+| --- | --- | --- |
+| Claude Code | 2.1.302 | Genuine authenticated model calls, persisted conversation continuation, approvals/cancellation, native resources, and isolated enterprise-policy checks |
+| OpenCode | 2.1.0 | Actual installed process with deterministic local model responses; native discovery/continuation, MCP and plugin loading, cancellation and approvals |
+| Pi | 1.3.0 | Actual installed process with deterministic local model responses; native discovery/continuation, MCP and extension loading, cancellation and approvals |
+| Oh-my-pi | 18.12.6 | Dedicated adapter; actual native instruction/skill loading, stdio and authenticated HTTP MCP handshakes, native-created history discovery and exact resume, fresh startup with `autoResume: true`; no model prompts |
+
+The compiled CLI tests additionally verify native process replacement, saved
+working directories, literal argument and environment forwarding, setup-only
+operation, and absence of Atlas session/daemon records. Unit cases cover profile
+and account isolation, large transcripts, histories beyond the browse limit,
+invalid handles, partial discovery failures, terminal cleanup, and package drift.
+Oh-my-pi configuration packages preserve YAML comments and unrelated settings;
+unchanged syncs are byte-identical, and edits to owned fields block removal.
+
+Actual terminal smoke checks passed new, resume, and searchable-picker handoff
+for Pi, and for OpenCode in both default native service mode and `--standalone`
+mode. Oh-my-pi's compiled Atlas
+new/resume handoff rendered its real UI, retained saved history only on resume,
+and exited cleanly with `autoResume: true`. These checks used disposable homes
+and no external model calls; Pi/OpenCode histories were seeded by local fixtures.
+The default OpenCode test assigned an available native service port inside its
+disposable home: the native default port was already occupied on the host.
+The initial port collision also reproduced without Atlas; after isolating the
+port, all three default UI flows passed and the fixture service was stopped.
+The existing host listener was not changed.
+
+The enterprise gate ran all installed-Claude cases, including the private Linux
+mount/network namespace test: managed MCP policy remains effective against
+lower-priority settings, malformed managed policy fails closed, unapproved
+project MCP does not connect, and a local TLS MCP connection requires its CA.
+Provider/network environment forwarding uses synthetic credentials. **Actual
+enterprise SSO, tenant authorization, corporate proxy/mTLS negotiation, live
+Bedrock/Vertex/Foundry inference, and Windows/WSL deployment remain unverified.**
+See [the enterprise evidence and repeatable checks](enterprise.md).
+
+Repeat the complete gate using installed harnesses and existing Claude login:
+
+```bash
+ATLAS_OMP_BINARY=/absolute/path/to/installed/omp scripts/test-native.sh
+go vet ./...
+go build -trimpath -o bin/atlas ./cmd/atlas
+```
+
+This suite makes real Claude model calls. Pi/OpenCode responses are local
+fixtures; Oh-my-pi inspection and enterprise-policy checks make no model calls.
+The OMP path must be the actual executable, not an auto-updating shell wrapper.
+Tests use disposable native homes/settings except the explicitly authenticated
+Claude inference gate; no login or global native configuration is replaced.
+
+## Native-session CLI migration
+
+The current public interface uses native harness sessions. The Atlas 0.2
+results below are historical evidence for package installation and the earlier
+managed execution paths; their test counts and managed CLI examples do not
+verify the new menu or session browser. Retired commands include `run`, `send`,
+`logs`, `wait`, `stop`, `permissions`, `configure`, `daemon`, and managed session
+import/archive operations. Existing records are preserved.
+
+`tests/native_cli_test.go` replaces the old managed Claude CLI suite with a
+compiled CLI fixture test. It builds Atlas once and verifies setup-only
+initialization, configuration preservation, native Claude history listing,
+actual process replacement for resume/new/exec, native working directory and
+argument/environment forwarding, retired-command guidance, and the absence of
+Atlas session or daemon state. Native history and all homes are isolated; the
+fake native executable makes no inference requests and uses no real credentials.
+This checks the handoff contract, not a real harness's interactive UI.
+
+The following checks passed on 2026-10-21:
+
+```bash
+go test ./tests -run TestNativeCLI -count=1 -v
+go test -race ./...
+go vet ./...
+```
+
+
+The CLI build also passed. Read-only discovery of the installed harnesses'
+existing stores found 27 Claude Code sessions, 2 OpenCode sessions, and 0 Pi
+sessions. Only these counts are recorded here; transcripts were not modified.
+
+Separate installed-harness checks passed for Pi CLI/MCP and OpenCode lifecycle
+and CLI behavior using local deterministic model responses. Those checks launch
+real harness executables, but do not demonstrate genuine model inference.
+The full race/vet and fixture results above are current; the Atlas 0.2 reports
+below remain historical evidence for their original managed execution paths.
+
+## Archived Atlas 0.2 report
+
 Verified on **2026-10-20**, Linux x86_64 (`7.2.5-3-omarchy`), using Go **1.27.3**. The tested machine is ordinary Linux, not a Windows/WSL host. Atlas targets the Linux side of WSL; a company WSL image and company model endpoints were not available for direct validation.
 
 ## Package distribution verification (Atlas 0.2)

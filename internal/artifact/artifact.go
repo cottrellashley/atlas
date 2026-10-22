@@ -54,11 +54,11 @@ func Validate(m Manifest) error {
 		return fmt.Errorf("unsupported package kind %q", m.Kind)
 	}
 	for _, h := range m.Harnesses {
-		if h != "claude" && h != "pi" && h != "opencode" {
+		if h != "claude" && h != "pi" && h != "omp" && h != "opencode" {
 			return fmt.Errorf("unknown harness %q", h)
 		}
 	}
-	validProvider := func(h string) bool { return h == "*" || h == "claude" || h == "pi" || h == "opencode" }
+	validProvider := func(h string) bool { return h == "*" || h == "claude" || h == "pi" || h == "omp" || h == "opencode" }
 	for h, path := range m.Config {
 		if !validProvider(h) {
 			return fmt.Errorf("unknown config harness %q", h)
@@ -103,7 +103,7 @@ func Validate(m Manifest) error {
 			return errors.New("empty dependency source")
 		}
 		for _, h := range d.Harnesses {
-			if h != "claude" && h != "pi" && h != "opencode" {
+			if h != "claude" && h != "pi" && h != "omp" && h != "opencode" {
 				return fmt.Errorf("unknown dependency harness %q", h)
 			}
 		}

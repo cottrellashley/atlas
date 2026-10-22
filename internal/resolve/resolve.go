@@ -317,7 +317,7 @@ func (r Resolver) Resolve(ctx context.Context, requests []Request, old Lock, upd
 		return accepted, e
 	}
 	for _, request := range requests {
-		if request.Harness != "claude" && request.Harness != "pi" && request.Harness != "opencode" {
+		if request.Harness != "claude" && request.Harness != "pi" && request.Harness != "omp" && request.Harness != "opencode" {
 			return lock, nil, fmt.Errorf("unsupported package harness %q", request.Harness)
 		}
 		var item Locked

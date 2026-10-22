@@ -6,34 +6,39 @@ Atlas gateway or package server is required. GitHub repository permissions
 control who can read or publish releases.
 
 Packages install into the harness's native project or user configuration. A
-user can start the same setup with `atlas tui`, `claude`, `pi`, or `opencode`.
+user can start the same setup with `atlas new`, `claude`, `pi`, or `opencode`.
 Native trust, authentication, and tool permissions remain the provider's own.
 
 ## 1. Use resources locally
 
-Initialize a project, then start its native terminal interface:
+Initialize a project and open its native terminal interface:
 
 ```bash
 mkdir my-research
 cd my-research
-atlas init --harness pi --template researcher
-atlas tui
+atlas init researcher --harness pi
 # Or run the provider directly, from this directory:
 pi
 ```
 
 Choose `claude`, `pi`, or `opencode`, or an Atlas configured harness alias.
-`atlas tui` and `atlas exec` are equivalent terminal handoffs. They do not create
-an Atlas-managed session. Native arguments follow `--`:
+Initialization opens the native interface after setup in a terminal. Use
+`--no-open` when an agent or script should only configure files; `--json`,
+`--dry-run`, and nonterminal initialization also suppress the launch.
+
+Use `atlas new` to start another session or `atlas session list` to browse and
+continue native history. Bare `atlas` and `atlas tui` offer both choices. No
+Atlas-managed session record or import is required. Native arguments can be
+passed directly through `exec`:
 
 ```bash
-atlas tui --harness claude -- --resume
+atlas exec --harness claude -- --resume
 atlas exec --harness opencode -- auth login
 ```
 
-For Atlas-managed execution, use `atlas run`, `atlas send`, and the other
-[session commands](../README.md#managed-work). Both execution paths see the
-same installed resources.
+The native interface loads the same installed resources whether opened through
+Atlas or the harness's own command. See [the agent workflow](agent-workflow.md)
+for a compact guide to configuration automation.
 
 ### Install a skill directory
 
@@ -156,7 +161,7 @@ atlas package search research
 atlas package add @research/researcher@1.4.0 --harness opencode --dry-run
 atlas package add @research/researcher@1.4.0 --harness opencode
 atlas package status
-atlas tui --harness opencode
+atlas new --harness opencode
 ```
 
 Use `--catalog company`, the `company::@research/researcher@1.4.0` source form,
@@ -217,7 +222,7 @@ configures the same catalog access and runs:
 ```bash
 atlas package sync --locked
 atlas package status
-atlas tui --harness opencode
+atlas new --harness opencode
 ```
 
 The lock stores full GitHub catalog identity, exact releases, and archive
@@ -358,9 +363,8 @@ existing Atlas `template.json` format. Its dependencies can install skills,
 plugins, or configuration alongside initial scaffolding:
 
 ```bash
-atlas init --harness claude \
-  --template @research/company-project@1.0.0 \
-  --package @research/researcher@1.4.0
+atlas init @research/company-project@1.0.0 --harness claude \
+  --package @research/researcher@1.4.0 --no-open
 ```
 
 Template files, all requested package resources, dependency metadata, and the

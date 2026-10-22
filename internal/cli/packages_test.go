@@ -178,16 +178,17 @@ func TestCLIBundlesRetainSharedDependencyUntilLastRemoval(t *testing.T) {
 }
 
 func TestCLIRawSkillAndMCPShortcuts(t *testing.T) {
-	for _, provider := range []string{"claude", "pi", "opencode"} {
+	for _, provider := range []string{"claude", "pi", "omp", "opencode"} {
 		t.Run(provider, func(t *testing.T) {
 			c := newPackageCLI(t)
-			if provider == "pi" {
+			if provider == "pi" || provider == "omp" {
 				tools := t.TempDir()
-				binary := filepath.Join(tools, "pi-version")
-				if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '1.3.0\\n'\n"), 0755); err != nil {
+				binary := filepath.Join(tools, provider+"-version")
+				version := map[string]string{"pi": "1.3.0", "omp": "18.12.6"}[provider]
+				if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '"+version+"\\n'\n"), 0755); err != nil {
 					t.Fatal(err)
 				}
-				config, _ := json.Marshal(map[string]any{"schemaVersion": 1, "harnesses": map[string]any{"pi": map[string]any{"adapter": "pi", "command": []string{binary}}}})
+				config, _ := json.Marshal(map[string]any{"schemaVersion": 1, "harnesses": map[string]any{provider: map[string]any{"adapter": provider, "command": []string{binary}}}})
 				cliWrite(t, c.app.Home, "config.json", string(config))
 			}
 			target := t.TempDir()
@@ -198,13 +199,13 @@ func TestCLIRawSkillAndMCPShortcuts(t *testing.T) {
 				t.Fatal(err)
 			}
 			cliJSON(t, c.must("skill", "add", skill, "--harness", provider, "--cwd", target, "--json"))
-			prefix := map[string]string{"claude": ".claude", "pi": ".pi", "opencode": ".opencode"}[provider]
+			prefix := map[string]string{"claude": ".claude", "pi": ".pi", "omp": ".omp", "opencode": ".opencode"}[provider]
 			info, err := os.Stat(filepath.Join(target, prefix, "skills/raw-proof/scripts/proof.sh"))
 			if err != nil || info.Mode().Perm()&0111 == 0 {
 				t.Fatalf("helper executable mode lost: %v %v", info, err)
 			}
 			cliJSON(t, c.must("mcp", "add", "company_docs", "--command", "node", "--arg=--read-only", "--arg", "server.js", "--env", "MODE=research", "--harness", provider, "--cwd", target, "--json"))
-			configPath := map[string]string{"claude": ".mcp.json", "pi": ".pi/mcp.json", "opencode": "opencode.json"}[provider]
+			configPath := map[string]string{"claude": ".mcp.json", "pi": ".pi/mcp.json", "omp": ".omp/mcp.json", "opencode": "opencode.json"}[provider]
 			var document map[string]any
 			if err := json.Unmarshal([]byte(cliRead(t, target, configPath)), &document); err != nil {
 				t.Fatal(err)
